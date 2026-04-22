@@ -347,7 +347,7 @@ async function analyzeArticleWithClaude(articleHtml, title, apiKey) {
 
 // ---------- analyze article orchestrator ----------
 
-async function handleAnalyzeArticle(tabId) {
+async function handleAnalyzeContent(tabId) {
   const settings = await getSettings();
   if (!settings.enabled) return { ok: false, error: "disabled" };
   if (!settings.apiKey) return { ok: false, error: "no_api_key", message: "Set an Anthropic API key first." };
@@ -591,10 +591,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (!tab?.id) { sendResponse({ ok: false, error: "no_tab" }); return; }
         sendResponse(await handleScanPage(tab.id));
-      } else if (msg?.type === "analyzeArticle") {
+      } else if (msg?.type === "analyzeContent") {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (!tab?.id) { sendResponse({ ok: false, error: "no_tab" }); return; }
-        sendResponse(await handleAnalyzeArticle(tab.id));
+        sendResponse(await handleAnalyzeContent(tab.id));
       } else if (msg?.type === "getSettings") {
         sendResponse(await getSettings());
       } else if (msg?.type === "saveSettings") {

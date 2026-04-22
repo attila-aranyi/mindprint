@@ -15,7 +15,7 @@ const els = {
   keyStatus: document.getElementById("keyStatus"),
   scanPage: document.getElementById("scanPage"),
   scanStatus: document.getElementById("scanStatus"),
-  analyzeArticle: document.getElementById("analyzeArticle"),
+  analyzeContent: document.getElementById("analyzeContent"),
   analyzeStatus: document.getElementById("analyzeStatus"),
   today: document.getElementById("today"),
   clearCache: document.getElementById("clearCache"),
@@ -127,11 +127,11 @@ els.scanPage.addEventListener("click", async () => {
   }
 });
 
-els.analyzeArticle.addEventListener("click", async () => {
-  els.analyzeArticle.disabled = true;
+els.analyzeContent.addEventListener("click", async () => {
+  els.analyzeContent.disabled = true;
   setStatus(els.analyzeStatus, "Analyzing article\u2026", "progress");
   try {
-    const r = await send({ type: "analyzeArticle" });
+    const r = await send({ type: "analyzeContent" });
     if (r?.ok) {
       setStatus(els.analyzeStatus, r.message || "Analysis complete.", "ok");
       const s = await send({ type: "getSettings" });
@@ -142,7 +142,7 @@ els.analyzeArticle.addEventListener("click", async () => {
   } catch (e) {
     setStatus(els.analyzeStatus, `Error: ${e.message}`, "err");
   } finally {
-    els.analyzeArticle.disabled = false;
+    els.analyzeContent.disabled = false;
   }
 });
 
@@ -156,7 +156,7 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === "scanProgress" && els.scanPage.disabled) {
     setStatus(els.scanStatus, msg.step, "progress");
   }
-  if (msg?.type === "analyzeProgress" && els.analyzeArticle.disabled) {
+  if (msg?.type === "analyzeProgress" && els.analyzeContent.disabled) {
     setStatus(els.analyzeStatus, msg.step, "progress");
   }
 });
