@@ -413,31 +413,31 @@ async function handleAnalyzeContent(tabId) {
     return { ok: false, error: "inject_failed", message: `Cannot access this page: ${e.message}` };
   }
 
-  // Step 2: Extract article content.
-  progress("Extracting article...");
-  let articleResp;
+  // Step 2: Extract content (platform-aware).
+  progress("Extracting content...");
+  let contentResp;
   try {
-    articleResp = await chrome.tabs.sendMessage(tabId, { type: "extractArticle" });
+    contentResp = await chrome.tabs.sendMessage(tabId, { type: "extractContent" });
   } catch (e) {
-    return { ok: false, error: "extract_failed", message: `Article extraction failed: ${e.message}` };
+    return { ok: false, error: "extract_failed", message: `Content extraction failed: ${e.message}` };
   }
-  if (!articleResp?.ok || !articleResp.html) {
-    return { ok: false, error: "extract_empty", message: "No article content found on this page." };
+  if (!contentResp?.ok || !contentResp.html) {
+    return { ok: false, error: "extract_empty", message: "No content found on this page." };
   }
 
-  const { title, imageUrl, html } = articleResp;
+  const { platform, title, html } = contentResp;
 
   // Step 3: Run TRIBE + Claude in parallel.
-  progress("Analyzing tone and content...");
+  progress("Analyzing content...");
 
-  const tribePromise = (settings.engine === "tribe" && settings.backendUrl)
+  const tribePromise = (settings.engine === "tribe" && settings.backendUrl && title)
     ? classifyBatchTribe([title], settings.backendUrl).catch(e => {
         console.warn("[MindPrint] TRIBE analysis failed:", e.message);
         return null;
       })
     : Promise.resolve(null);
 
-  const claudePromise = analyzeContentWithClaude(html, title, settings.apiKey, articleResp.platform, articleResp.metadata);
+  const claudePromise = analyzeContentWithClaude(html, title, settings.apiKey, platform, contentResp);
 
   let tribeResult, claudeResult;
   try {
@@ -451,7 +451,8 @@ async function handleAnalyzeContent(tabId) {
 
   const analysisResults = {
     title,
-    imageUrl,
+    platform,
+    metadata: contentResp,
     claude: claudeResult,
     tribe: tribeData,
     truncated: html.length >= 29900,
@@ -466,7 +467,7 @@ async function handleAnalyzeContent(tabId) {
   }
 
   await bumpAnalyzedCounter(1);
-  return { ok: true, message: "Article analysis complete." };
+  return { ok: true, message: "Analysis complete." };
 }
 
 // ---------- scan page orchestrator ----------
