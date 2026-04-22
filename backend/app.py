@@ -88,7 +88,7 @@ def create_app() -> FastAPI:
                 scored = score_emotions(preds)
             except Exception as e:
                 log.exception("classify failed for %r", h)
-                raise HTTPException(status_code=500, detail=f"inference failed: {e}")
+                continue  # skip this headline, don't abort the batch
             cache[key] = scored
             results[h] = scored
         return ClassifyResponse(results=results)

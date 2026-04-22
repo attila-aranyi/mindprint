@@ -313,35 +313,50 @@ async function handleScanPage(tabId) {
     return { ok: true, count: 0, message: "No headlines found on this page." };
   }
 
-  // Step 4: Classify headlines via existing pipeline.
-  progress(`Classifying ${headlines.length} headlines...`);
-  const classifyResult = await handleClassify(headlines);
-  if (!classifyResult.ok) {
-    return {
-      ok: false,
-      error: classifyResult.error,
-      message: `Found ${headlines.length} headlines but classification failed: ${classifyResult.error}`,
-      count: headlines.length,
-    };
+  // Step 4+5: Classify in small batches and inject badges progressively.
+  const SCAN_BATCH = 5;
+  let totalClassified = 0;
+  let totalDecorated = 0;
+  let lastError = null;
+
+  for (let i = 0; i < headlines.length; i += SCAN_BATCH) {
+    const batch = headlines.slice(i, i + SCAN_BATCH);
+    progress(`Classifying headlines ${i + 1}\u2013${Math.min(i + SCAN_BATCH, headlines.length)} of ${headlines.length}...`);
+
+    const classifyResult = await handleClassify(batch);
+    if (!classifyResult.ok) {
+      lastError = classifyResult.error;
+      continue; // skip failed batch, try the rest
+    }
+    totalClassified += Object.keys(classifyResult.results).length;
+
+    // Inject badges for this batch immediately.
+    try {
+      const decorateResp = await chrome.tabs.sendMessage(tabId, {
+        type: "decorate",
+        results: classifyResult.results,
+      });
+      totalDecorated += decorateResp?.decorated || 0;
+    } catch (e) {
+      // Page may have navigated away — keep going so cache is warm for next scan.
+    }
   }
 
-  // Step 5: Send results to content script for badge injection.
-  progress("Adding badges...");
-  let decorateResp;
-  try {
-    decorateResp = await chrome.tabs.sendMessage(tabId, {
-      type: "decorate",
-      results: classifyResult.results,
-    });
-  } catch (e) {
-    return { ok: false, error: "decorate_failed", message: `Badge injection failed: ${e.message}` };
+  if (totalClassified === 0 && lastError) {
+    return {
+      ok: false,
+      error: lastError,
+      message: `Found ${headlines.length} headlines but classification failed: ${lastError}`,
+      count: headlines.length,
+    };
   }
 
   return {
     ok: true,
     count: headlines.length,
-    decorated: decorateResp?.decorated || 0,
-    message: `Analyzed ${headlines.length} headlines, decorated ${decorateResp?.decorated || 0}.`,
+    classified: totalClassified,
+    decorated: totalDecorated,
+    message: `Analyzed ${totalClassified} of ${headlines.length} headlines, decorated ${totalDecorated}.`,
   };
 }
 
