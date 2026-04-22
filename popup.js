@@ -130,4 +130,11 @@ els.clearCache.addEventListener("click", async () => {
   if (resp?.ok) setStatus(els.scanStatus, `Cleared ${resp.cleared} cached labels.`, "ok");
 });
 
+// Listen for progress updates from background during scan.
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg?.type === "scanProgress" && els.scanPage.disabled) {
+    setStatus(els.scanStatus, msg.step, "progress");
+  }
+});
+
 load();

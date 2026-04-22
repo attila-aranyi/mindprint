@@ -270,7 +270,12 @@ async function handleScanPage(tabId) {
   if (!settings.enabled) return { ok: false, error: "disabled" };
   if (!settings.apiKey) return { ok: false, error: "no_api_key", message: "Set an Anthropic API key first." };
 
+  function progress(step) {
+    chrome.runtime.sendMessage({ type: "scanProgress", step }).catch(() => {});
+  }
+
   // Step 1: Inject content script + CSS into the tab.
+  progress("Preparing page...");
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
@@ -285,6 +290,7 @@ async function handleScanPage(tabId) {
   }
 
   // Step 2: Extract stripped DOM.
+  progress("Extracting page content...");
   let domResp;
   try {
     domResp = await chrome.tabs.sendMessage(tabId, { type: "extractDOM" });
@@ -296,6 +302,7 @@ async function handleScanPage(tabId) {
   }
 
   // Step 3: Ask Claude to identify headlines.
+  progress("Identifying headlines...");
   let headlines;
   try {
     headlines = await extractHeadlines(domResp.html, settings.apiKey);
@@ -307,6 +314,7 @@ async function handleScanPage(tabId) {
   }
 
   // Step 4: Classify headlines via existing pipeline.
+  progress(`Classifying ${headlines.length} headlines...`);
   const classifyResult = await handleClassify(headlines);
   if (!classifyResult.ok) {
     return {
@@ -318,6 +326,7 @@ async function handleScanPage(tabId) {
   }
 
   // Step 5: Send results to content script for badge injection.
+  progress("Adding badges...");
   let decorateResp;
   try {
     decorateResp = await chrome.tabs.sendMessage(tabId, {
