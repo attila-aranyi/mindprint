@@ -58,6 +58,49 @@ Return at most 50 headlines. If the page has no identifiable headlines, return a
 const EXTRACT_TIMEOUT_MS = 30000;
 const MAX_EXTRACT_HEADLINES = 50;
 
+const CLAUDE_ANALYSIS_MODEL = "claude-sonnet-4-5-20250514";
+const ANALYSIS_TIMEOUT_MS = 60000;
+
+const ANALYSIS_SYSTEM_PROMPT = `You are an expert media analyst. Given the HTML content of a news article or blog post, perform a structured analysis covering tone, factual claims, and logical reasoning.
+
+Return ONLY a JSON object. No prose, no markdown fences. The object must have this exact structure:
+
+{
+  "tone": {
+    "summary": "1-sentence description of the dominant rhetorical/emotional tone",
+    "details": "2-3 sentences explaining the tone with specific language choices cited",
+    "evidence": ["exact quote from article", "another exact quote"]
+  },
+  "fact_check": {
+    "summary": "1-sentence overview, e.g. '4 claims identified, 1 unverifiable'",
+    "claims": [
+      {
+        "claim": "The exact factual claim text from the article",
+        "confidence": "high|medium|low|unverifiable",
+        "reasoning": "1-2 sentences explaining your confidence rating"
+      }
+    ]
+  },
+  "fallacies": {
+    "summary": "1-sentence overview, e.g. '1 fallacy detected' or 'No clear fallacies detected'",
+    "items": [
+      {
+        "type": "Name of the fallacy",
+        "quote": "The exact text from the article",
+        "explanation": "1-2 sentences explaining why this is a fallacy"
+      }
+    ]
+  },
+  "overall_summary": "One paragraph synthesizing all findings — tone, factual reliability, reasoning quality."
+}
+
+Guidelines:
+- For tone: focus on word choice, framing, and rhetorical techniques — not the topic itself.
+- For fact_check: only flag verifiable factual claims (numbers, dates, attributions, statistics). Rate your confidence honestly. "unverifiable" means you cannot assess it from your training data — this is a valid and common rating.
+- For fallacies: only flag clear logical fallacies with evidence. Rhetorical techniques (e.g. emotional language) belong in tone, not here. If no fallacies are found, return an empty items array.
+- Keep evidence arrays to 2-4 items max.
+- Keep claims array to 5-8 items max.`;
+
 // ---------- settings ----------
 
 function todayStr() {
@@ -261,6 +304,45 @@ async function extractHeadlines(strippedHtml, apiKey) {
     .map(item => String(item.text || "").replace(/\s+/g, " ").trim())
     .filter(t => t.length >= 6 && t.length <= MAX_HEADLINE_LEN)
     .slice(0, MAX_EXTRACT_HEADLINES);
+}
+
+// ---------- article analysis via Claude ----------
+
+async function analyzeArticleWithClaude(articleHtml, title, apiKey) {
+  if (!apiKey) throw new Error("no_api_key");
+  const userMsg = `Analyze this article titled "${title}":\n\n${articleHtml}`;
+
+  const resp = await fetchWithTimeout(ANTHROPIC_API, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: CLAUDE_ANALYSIS_MODEL,
+      max_tokens: 4096,
+      system: ANALYSIS_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userMsg }],
+    }),
+  }, ANALYSIS_TIMEOUT_MS);
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`Claude API ${resp.status}: ${errText.slice(0, 200)}`);
+  }
+  const data = await resp.json();
+  const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+
+  // Parse JSON object (not array).
+  let t = text.trim();
+  if (t.startsWith("```")) {
+    t = t.replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
+  }
+  const start = t.indexOf("{");
+  const end = t.lastIndexOf("}");
+  if (start === -1 || end === -1 || end < start) throw new Error("no JSON object in model output");
+  return JSON.parse(t.slice(start, end + 1));
 }
 
 // ---------- scan page orchestrator ----------
