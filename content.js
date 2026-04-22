@@ -10,6 +10,11 @@
   if (window.__mindprintLoaded) return;
   window.__mindprintLoaded = true;
 
+  const DEBUG = true;
+  function dbg(label, data) {
+    if (DEBUG) console.log(`[MindPrint DEBUG] ${label}:`, JSON.parse(JSON.stringify(data)));
+  }
+
   const TAXONOMY = {
     outrage:   { emoji: "\u{1F621}", label: "outrage" },
     fear:      { emoji: "\u{1F628}", label: "fear" },
@@ -194,42 +199,102 @@
   }
 
   function extractInstagramPost() {
+    // Caption — Instagram's DOM changes frequently. Try multiple strategies.
     let captionText = "";
-    const captionEl = document.querySelector('h1')
-      || document.querySelector('[data-testid="post-comment-root"] span')
-      || document.querySelector('div[role="dialog"] ul li span');
-    if (captionEl) captionText = captionEl.textContent.replace(/\s+/g, " ").trim();
-
-    let authorName = "", verified = false;
-    const authorLink = document.querySelector('header a[role="link"]')
-      || document.querySelector('a[href*="/"]:has(img[alt])');
-    if (authorLink) {
-      authorName = authorLink.textContent.replace(/\s+/g, " ").trim();
-      const headerEl = authorLink.closest("header") || authorLink.parentElement;
-      if (headerEl) {
-        verified = !!headerEl.querySelector('svg[aria-label*="Verified"], span[title="Verified"]');
+    const captionSelectors = [
+      'h1',                                                    // some post layouts
+      '[data-testid="post-comment-root"] span',               // comment-root variant
+      'div[role="dialog"] ul li:first-child span',            // dialog/modal view
+      'article span[dir="auto"]',                             // main feed posts
+      'ul li span[dir="auto"]',                               // comment-style caption
+    ];
+    for (const sel of captionSelectors) {
+      const el = document.querySelector(sel);
+      if (el) {
+        const t = el.textContent.replace(/\s+/g, " ").trim();
+        if (t.length > captionText.length) captionText = t;
       }
     }
 
-    const engagement = { likes: 0, comments: 0 };
-    const likeEl = document.querySelector('section a[href*="liked_by"], section span');
-    if (likeEl) {
-      const likeMatch = likeEl.textContent.replace(/,/g, "").match(/([\d]+)/);
-      if (likeMatch) engagement.likes = parseInt(likeMatch[1], 10) || 0;
+    // Fallback: grab all visible text from the main content area.
+    if (!captionText || captionText.length < 10) {
+      const mainArea = document.querySelector('article') || document.querySelector('main') || document.body;
+      const allSpans = mainArea.querySelectorAll('span[dir="auto"], span');
+      let longest = "";
+      for (const s of allSpans) {
+        const t = s.textContent.replace(/\s+/g, " ").trim();
+        if (t.length > longest.length && t.length < 5000) longest = t;
+      }
+      if (longest.length > captionText.length) captionText = longest;
     }
-    const commentEls = document.querySelectorAll('ul > li[role="menuitem"], ul > div > li');
+
+    dbg("Instagram caption", captionText.slice(0, 200));
+
+    // Author — try multiple approaches.
+    let authorName = "", verified = false;
+    const authorSelectors = [
+      'header a[role="link"]',
+      'a[href*="/"]:has(img[alt])',
+      'span a[role="link"]',
+      'article header a',
+    ];
+    for (const sel of authorSelectors) {
+      try {
+        const el = document.querySelector(sel);
+        if (el) {
+          const t = el.textContent.replace(/\s+/g, " ").trim();
+          if (t.length > 1 && t.length < 100) { authorName = t; break; }
+        }
+      } catch { /* :has() may not be supported */ }
+    }
+    // Verification.
+    const headerEl = document.querySelector('header') || document.querySelector('article');
+    if (headerEl) {
+      verified = !!headerEl.querySelector('svg[aria-label*="erified"], span[title="Verified"]');
+    }
+
+    dbg("Instagram author", { authorName, verified });
+
+    // Engagement.
+    const engagement = { likes: 0, comments: 0 };
+    // Likes — look for text containing numbers near like-related elements.
+    const allButtons = document.querySelectorAll('section button, section a, section span');
+    for (const el of allButtons) {
+      const t = el.textContent.replace(/,/g, "").trim();
+      const match = t.match(/([\d]+)\s*like/i) || t.match(/^([\d,]+)$/);
+      if (match && !engagement.likes) {
+        engagement.likes = parseInt(match[1].replace(/,/g, ""), 10) || 0;
+      }
+    }
+    // Comments — count comment-like list items.
+    const commentEls = document.querySelectorAll('ul > li[role="menuitem"], ul > div > li, ul > li');
     engagement.comments = Math.max(0, commentEls.length - 1);
 
+    dbg("Instagram engagement", engagement);
+
+    // Hashtags.
     const hashtags = [];
     const hashMatches = captionText.match(/#\w+/g);
     if (hashMatches) hashtags.push(...hashMatches.map(h => h.slice(1)));
 
+    // Media type.
     let mediaType = "image";
     if (document.querySelector('video')) mediaType = "reel";
     else if (document.querySelectorAll('li[style*="translateX"]').length > 1) mediaType = "carousel";
 
-    const title = `${authorName} post`;
-    const html = `<p>${captionText}</p>`;
+    // Also capture alt text from images as additional context.
+    const imgAlts = [];
+    const imgs = document.querySelectorAll('article img[alt], main img[alt]');
+    for (const img of imgs) {
+      const alt = img.alt?.trim();
+      if (alt && alt.length > 5 && !alt.startsWith("User avatar")) imgAlts.push(alt);
+    }
+
+    const title = `${authorName || "Instagram"} post`;
+    let html = `<p>${captionText}</p>`;
+    if (imgAlts.length) {
+      html += "\n" + imgAlts.map(a => `<figcaption>${a}</figcaption>`).join("\n");
+    }
 
     return {
       platform: "instagram",
@@ -244,9 +309,13 @@
 
   function extractContent() {
     const platform = detectPlatform();
-    if (platform === "x") return extractXPost();
-    if (platform === "instagram") return extractInstagramPost();
-    return { platform: "article", ...extractArticle() };
+    dbg("detectPlatform", platform);
+    let result;
+    if (platform === "x") result = extractXPost();
+    else if (platform === "instagram") result = extractInstagramPost();
+    else result = { platform: "article", ...extractArticle() };
+    dbg("extractContent result", result);
+    return result;
   }
 
   // ---------- headline node finding ----------
