@@ -230,6 +230,41 @@
   font-style: italic;
 }
 
+.mpb-pill-engage  { background: #fff0e0; border: 1px solid #e5b87a; color: #7a4b10; }
+.mpb-pill-context { background: #f0e6ff; border: 1px solid #c0a5e8; color: #5b2d9a; }
+
+.mpb-meta {
+  font-size: 11px;
+  color: #5b636d;
+  margin-top: 2px;
+}
+
+.mpb-engage-card {
+  padding: 8px 0;
+  border-bottom: 1px solid #e1e4e8;
+}
+.mpb-engage-card:last-child { border-bottom: none; }
+
+.mpb-context-card {
+  padding: 8px 0;
+  border-bottom: 1px solid #e1e4e8;
+}
+.mpb-context-card:last-child { border-bottom: none; }
+
+.mpb-sev-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.sev-high   { background: #ffe4e1; color: #9a1b1b; }
+.sev-medium { background: #fff4d6; color: #7a5b10; }
+.sev-low    { background: #eef0f3; color: #4a4f58; }
+
 /* ---------- Banner dark mode ---------- */
 
 @media (prefers-color-scheme: dark) {
@@ -266,4 +301,12 @@
   .mpb-claim-reason { color: #a0a6ad; }
   .mpb-fallacy-card { border-bottom-color: #2a2f37; }
   .mpb-note { color: #a0a6ad; }
+  .mpb-pill-engage  { background: #4a3a12; border-color: #7a5f21; color: #ffe2a1; }
+  .mpb-pill-context { background: #2e1f4f; border-color: #4a337a; color: #d7c6ff; }
+  .mpb-meta { color: #a0a6ad; }
+  .mpb-engage-card { border-bottom-color: #2a2f37; }
+  .mpb-context-card { border-bottom-color: #2a2f37; }
+  .sev-high   { background: #4a1f1b; color: #ffc6bf; }
+  .sev-medium { background: #4a3a12; color: #ffe2a1; }
+  .sev-low    { background: #2a2f37; color: #c9ccd3; }
 }
