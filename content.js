@@ -396,44 +396,23 @@
     label.className = "mpb-label";
     label.textContent = "MindPrint Analysis";
 
-    const pills = document.createElement("span");
+    const pills = document.createElement("div");
     pills.className = "mpb-pills";
 
-    if (claude.tone?.summary) {
+    function addPill(cls, shortLabel, count, sectionId) {
       const pill = document.createElement("span");
-      pill.className = "mpb-pill mpb-pill-tone";
-      pill.textContent = claude.tone.summary;
-      pill.addEventListener("click", () => toggleSection(banner, "tone"));
+      pill.className = `mpb-pill ${cls}`;
+      pill.textContent = count !== null ? `${count} ${shortLabel}` : shortLabel;
+      pill.addEventListener("click", () => toggleSection(banner, sectionId));
       pills.appendChild(pill);
     }
-    if (claude.fact_check?.summary) {
-      const pill = document.createElement("span");
-      pill.className = "mpb-pill mpb-pill-fact";
-      pill.textContent = claude.fact_check.summary;
-      pill.addEventListener("click", () => toggleSection(banner, "factcheck"));
-      pills.appendChild(pill);
-    }
-    if (claude.fallacies?.summary) {
-      const pill = document.createElement("span");
-      pill.className = "mpb-pill mpb-pill-fallacy";
-      pill.textContent = claude.fallacies.summary;
-      pill.addEventListener("click", () => toggleSection(banner, "fallacies"));
-      pills.appendChild(pill);
-    }
-    if (claude.engagement_tactics?.summary) {
-      const pill = document.createElement("span");
-      pill.className = "mpb-pill mpb-pill-engage";
-      pill.textContent = claude.engagement_tactics.summary;
-      pill.addEventListener("click", () => toggleSection(banner, "engagement"));
-      pills.appendChild(pill);
-    }
-    if (claude.missing_context?.summary) {
-      const pill = document.createElement("span");
-      pill.className = "mpb-pill mpb-pill-context";
-      pill.textContent = claude.missing_context.summary;
-      pill.addEventListener("click", () => toggleSection(banner, "context"));
-      pills.appendChild(pill);
-    }
+
+    if (claude.tone?.summary) addPill("mpb-pill-tone", claude.tone.summary.split(/[,.]/)[ 0].trim(), null, "tone");
+    if (claude.fact_check?.claims?.length) addPill("mpb-pill-fact", "claims", claude.fact_check.claims.length, "factcheck");
+    if (claude.fallacies?.items?.length) addPill("mpb-pill-fallacy", "fallacies", claude.fallacies.items.length, "fallacies");
+    else if (claude.fallacies) addPill("mpb-pill-ok", "No fallacies", null, "fallacies");
+    if (claude.engagement_tactics?.items?.length) addPill("mpb-pill-engage", "tactics", claude.engagement_tactics.items.length, "engagement");
+    if (claude.missing_context?.items?.length) addPill("mpb-pill-context", "context gaps", claude.missing_context.items.length, "context");
 
     const dismiss = document.createElement("button");
     dismiss.className = "mpb-dismiss";
@@ -630,14 +609,23 @@
     return banner;
   }
 
-  function buildSection(id, label, contentBuilder) {
+  function buildSection(id, label, contentBuilder, summary) {
     const section = document.createElement("div");
-    section.className = "mpb-section";
+    section.className = `mpb-section mpb-sec-${id}`;
     section.dataset.section = id;
 
     const header = document.createElement("div");
     header.className = "mpb-section-header";
-    header.textContent = label;
+    const titleSpan = document.createElement("span");
+    titleSpan.className = "mpb-sec-title";
+    titleSpan.textContent = label;
+    header.appendChild(titleSpan);
+    if (summary) {
+      const sub = document.createElement("span");
+      sub.className = "mpb-sec-summary";
+      sub.textContent = summary;
+      header.appendChild(sub);
+    }
     header.addEventListener("click", () => {
       const parent = section.closest(".mindprint-banner");
       if (parent) toggleSection(parent, id);
