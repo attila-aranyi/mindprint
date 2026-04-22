@@ -55,7 +55,7 @@ Respond with ONLY a JSON array. No prose, no markdown fences. Each element:
 
 Return at most 50 headlines. If the page has no identifiable headlines, return an empty array [].`;
 
-const EXTRACT_TIMEOUT_MS = 15000;
+const EXTRACT_TIMEOUT_MS = 30000;
 const MAX_EXTRACT_HEADLINES = 50;
 
 // ---------- settings ----------
