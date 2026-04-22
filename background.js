@@ -235,7 +235,7 @@ async function classifyBatchClaude(headlines, apiKey) {
 
 async function extractHeadlines(strippedHtml, apiKey) {
   if (!apiKey) throw new Error("no_api_key");
-  const resp = await fetch(ANTHROPIC_API, {
+  const resp = await fetchWithTimeout(ANTHROPIC_API, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -249,7 +249,7 @@ async function extractHeadlines(strippedHtml, apiKey) {
       system: EXTRACT_SYSTEM_PROMPT,
       messages: [{ role: "user", content: `Extract headlines from this page HTML:\n\n${strippedHtml}` }],
     }),
-  });
+  }, EXTRACT_TIMEOUT_MS);
   if (!resp.ok) {
     const errText = await resp.text().catch(() => "");
     throw new Error(`Claude API ${resp.status}: ${errText.slice(0, 200)}`);

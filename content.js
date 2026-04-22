@@ -7,6 +7,9 @@
 (() => {
   "use strict";
 
+  if (window.__mindprintLoaded) return;
+  window.__mindprintLoaded = true;
+
   const TAXONOMY = {
     outrage:   { emoji: "\u{1F621}", label: "outrage" },
     fear:      { emoji: "\u{1F628}", label: "fear" },
