@@ -351,6 +351,20 @@
       pill.addEventListener("click", () => toggleSection(banner, "fallacies"));
       pills.appendChild(pill);
     }
+    if (claude.engagement_tactics?.summary) {
+      const pill = document.createElement("span");
+      pill.className = "mpb-pill mpb-pill-engage";
+      pill.textContent = claude.engagement_tactics.summary;
+      pill.addEventListener("click", () => toggleSection(banner, "engagement"));
+      pills.appendChild(pill);
+    }
+    if (claude.missing_context?.summary) {
+      const pill = document.createElement("span");
+      pill.className = "mpb-pill mpb-pill-context";
+      pill.textContent = claude.missing_context.summary;
+      pill.addEventListener("click", () => toggleSection(banner, "context"));
+      pills.appendChild(pill);
+    }
 
     const dismiss = document.createElement("button");
     dismiss.className = "mpb-dismiss";
@@ -359,6 +373,25 @@
     dismiss.addEventListener("click", () => banner.remove());
 
     header.append(label, pills, dismiss);
+
+    // Platform metadata line.
+    if (analysis.platform && analysis.platform !== "article" && analysis.metadata) {
+      const meta = document.createElement("div");
+      meta.className = "mpb-meta";
+      const m = analysis.metadata;
+      const parts = [];
+      if (m.author?.name) parts.push(m.author.handle || m.author.name);
+      if (m.author?.verified) parts.push("verified");
+      if (m.engagement) {
+        if (m.engagement.likes) parts.push(`${m.engagement.likes} likes`);
+        if (m.engagement.retweets) parts.push(`${m.engagement.retweets} retweets`);
+        if (m.engagement.comments) parts.push(`${m.engagement.comments} comments`);
+        if (m.engagement.views) parts.push(`${m.engagement.views} views`);
+      }
+      meta.textContent = parts.join(" \u00b7 ");
+      header.appendChild(meta);
+    }
+
     banner.appendChild(header);
 
     // Tone section.
@@ -454,6 +487,60 @@
       return frag;
     });
     banner.appendChild(fallacySection);
+
+    // Engagement tactics section.
+    const engageSection = buildSection("engagement", "Engagement Tactics", () => {
+      const frag = document.createDocumentFragment();
+      const items = claude.engagement_tactics?.items || [];
+      if (items.length === 0) {
+        const p = document.createElement("p");
+        p.textContent = "No engagement tactics detected.";
+        frag.appendChild(p);
+        return frag;
+      }
+      for (const item of items) {
+        const card = document.createElement("div");
+        card.className = "mpb-engage-card";
+        const typeEl = document.createElement("strong");
+        typeEl.textContent = item.type || "Unknown";
+        const bq = document.createElement("blockquote");
+        bq.className = "mpb-quote";
+        bq.textContent = item.quote || "";
+        const expl = document.createElement("p");
+        expl.textContent = item.explanation || "";
+        card.append(typeEl, bq, expl);
+        frag.appendChild(card);
+      }
+      return frag;
+    });
+    banner.appendChild(engageSection);
+
+    // Missing context section.
+    const contextSection = buildSection("context", "Missing Context", () => {
+      const frag = document.createDocumentFragment();
+      const items = claude.missing_context?.items || [];
+      if (items.length === 0) {
+        const p = document.createElement("p");
+        p.textContent = "No significant context gaps identified.";
+        frag.appendChild(p);
+        return frag;
+      }
+      for (const item of items) {
+        const card = document.createElement("div");
+        card.className = "mpb-context-card";
+        const sev = document.createElement("span");
+        sev.className = `mpb-sev-badge sev-${item.severity || "medium"}`;
+        sev.textContent = item.severity || "medium";
+        const typeEl = document.createElement("strong");
+        typeEl.textContent = item.type || "Unknown";
+        const detail = document.createElement("p");
+        detail.textContent = item.detail || "";
+        card.append(sev, typeEl, detail);
+        frag.appendChild(card);
+      }
+      return frag;
+    });
+    banner.appendChild(contextSection);
 
     // Overall summary section.
     const summarySection = buildSection("summary", "Summary", () => {
