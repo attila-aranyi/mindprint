@@ -61,21 +61,22 @@ const MAX_EXTRACT_HEADLINES = 50;
 const CLAUDE_ANALYSIS_MODEL = "claude-sonnet-4-6";
 const ANALYSIS_TIMEOUT_MS = 60000;
 
-const ANALYSIS_SYSTEM_PROMPT = `You are an expert media analyst. Given the HTML content of a news article or blog post, perform a structured analysis covering tone, factual claims, and logical reasoning.
+function buildAnalysisPrompt(platform, metadata) {
+  const baseAnalysis = `You are an expert media analyst. Analyze the following content and return ONLY a JSON object. No prose, no markdown fences.
 
-Return ONLY a JSON object. No prose, no markdown fences. The object must have this exact structure:
+The JSON must have this structure:
 
 {
   "tone": {
     "summary": "1-sentence description of the dominant rhetorical/emotional tone",
     "details": "2-3 sentences explaining the tone with specific language choices cited",
-    "evidence": ["exact quote from article", "another exact quote"]
+    "evidence": ["exact quote 1", "exact quote 2"]
   },
   "fact_check": {
     "summary": "1-sentence overview, e.g. '4 claims identified, 1 unverifiable'",
     "claims": [
       {
-        "claim": "The exact factual claim text from the article",
+        "claim": "The exact factual claim text",
         "confidence": "high|medium|low|unverifiable",
         "reasoning": "1-2 sentences explaining your confidence rating"
       }
@@ -86,20 +87,67 @@ Return ONLY a JSON object. No prose, no markdown fences. The object must have th
     "items": [
       {
         "type": "Name of the fallacy",
-        "quote": "The exact text from the article",
-        "explanation": "1-2 sentences explaining why this is a fallacy"
+        "quote": "The exact text",
+        "explanation": "1-2 sentences explaining why"
       }
     ]
   },
-  "overall_summary": "One paragraph synthesizing all findings — tone, factual reliability, reasoning quality."
-}
+  "engagement_tactics": {
+    "summary": "1-sentence overview, e.g. '2 engagement tactics detected' or 'No engagement tactics detected'",
+    "items": [
+      {
+        "type": "Tactic name",
+        "quote": "exact text",
+        "explanation": "Why this is an engagement tactic"
+      }
+    ]
+  },
+  "missing_context": {
+    "summary": "1-sentence overview, e.g. '2 context gaps identified' or 'No significant context gaps'",
+    "items": [
+      {
+        "type": "Type of missing context",
+        "detail": "What context is missing and why it matters",
+        "severity": "high|medium|low"
+      }
+    ]
+  },
+  "overall_summary": "One paragraph synthesizing all findings."
+}`;
 
+  const guidelines = `
 Guidelines:
-- For tone: focus on word choice, framing, and rhetorical techniques — not the topic itself.
-- For fact_check: only flag verifiable factual claims (numbers, dates, attributions, statistics). Rate your confidence honestly. "unverifiable" means you cannot assess it from your training data — this is a valid and common rating.
-- For fallacies: only flag clear logical fallacies with evidence. Rhetorical techniques (e.g. emotional language) belong in tone, not here. If no fallacies are found, return an empty items array.
-- Keep evidence arrays to 2-4 items max.
-- Keep claims array to 5-8 items max.`;
+- tone: focus on word choice, framing, and rhetorical techniques.
+- fact_check: only flag verifiable factual claims. Rate confidence honestly. "unverifiable" is valid and common. Max 5-8 claims.
+- fallacies: only flag clear logical fallacies with evidence. Rhetorical techniques belong in tone. Empty items array if none found.
+- engagement_tactics: detect rage bait, cliffhangers, false controversies, call-to-action manipulation ("share if you agree"), urgency cues ("BREAKING"), ALL CAPS / excessive punctuation, hyperbolic language. Empty items array if none found.
+- missing_context: detect missing sources, old content without dates, selective framing, unattributed quotes/screenshots, hedging language, unverified claims stated as fact. Empty items array if none found.
+- Keep evidence arrays to 2-4 items max.`;
+
+  let platformContext = "";
+  if (platform === "x" && metadata) {
+    const m = metadata;
+    const parts = [];
+    if (m.author?.name) parts.push(`Author: ${m.author.name} ${m.author.handle || ""} (${m.author.verified ? "verified" : "unverified"})`);
+    if (m.timestamp) parts.push(`Posted: ${m.timestamp}`);
+    if (m.engagement) parts.push(`Engagement: ${m.engagement.likes} likes, ${m.engagement.retweets} retweets, ${m.engagement.replies} replies, ${m.engagement.views} views`);
+    if (m.hasMedia) parts.push("Contains media (image/video)");
+    if (m.quotedText) parts.push(`Quotes another post: "${m.quotedText}"`);
+    platformContext = `\n\nThis is a post on X (Twitter). Consider source credibility based on verification status and engagement patterns.\nMetadata:\n${parts.join("\n")}`;
+  } else if (platform === "instagram" && metadata) {
+    const m = metadata;
+    const parts = [];
+    if (m.author?.name) parts.push(`Author: ${m.author.name} (${m.author.verified ? "verified" : "unverified"})`);
+    if (m.engagement) parts.push(`Engagement: ${m.engagement.likes} likes, ${m.engagement.comments} comments`);
+    if (m.hashtags?.length) parts.push(`Hashtags: ${m.hashtags.map(h => "#" + h).join(" ")}`);
+    if (m.mediaType) parts.push(`Media type: ${m.mediaType}`);
+    platformContext = `\n\nThis is an Instagram post. Consider source credibility and how hashtags/engagement patterns might indicate manipulation.\nMetadata:\n${parts.join("\n")}`;
+  } else {
+    platformContext = "\n\nThis is a news article or blog post. Engagement tactics are less common but missing context analysis is highly relevant.";
+  }
+
+  return baseAnalysis + guidelines + platformContext;
+}
 
 // ---------- settings ----------
 
@@ -308,9 +356,10 @@ async function extractHeadlines(strippedHtml, apiKey) {
 
 // ---------- article analysis via Claude ----------
 
-async function analyzeArticleWithClaude(articleHtml, title, apiKey) {
+async function analyzeContentWithClaude(contentHtml, title, apiKey, platform, metadata) {
   if (!apiKey) throw new Error("no_api_key");
-  const userMsg = `Analyze this article titled "${title}":\n\n${articleHtml}`;
+  const systemPrompt = buildAnalysisPrompt(platform, metadata);
+  const userMsg = `Analyze this content titled "${title}":\n\n${contentHtml}`;
 
   const resp = await fetchWithTimeout(ANTHROPIC_API, {
     method: "POST",
@@ -323,7 +372,7 @@ async function analyzeArticleWithClaude(articleHtml, title, apiKey) {
     body: JSON.stringify({
       model: CLAUDE_ANALYSIS_MODEL,
       max_tokens: 4096,
-      system: ANALYSIS_SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [{ role: "user", content: userMsg }],
     }),
   }, ANALYSIS_TIMEOUT_MS);
@@ -334,7 +383,6 @@ async function analyzeArticleWithClaude(articleHtml, title, apiKey) {
   const data = await resp.json();
   const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
 
-  // Parse JSON object (not array).
   let t = text.trim();
   if (t.startsWith("```")) {
     t = t.replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
@@ -389,7 +437,7 @@ async function handleAnalyzeContent(tabId) {
       })
     : Promise.resolve(null);
 
-  const claudePromise = analyzeArticleWithClaude(html, title, settings.apiKey);
+  const claudePromise = analyzeContentWithClaude(html, title, settings.apiKey, articleResp.platform, articleResp.metadata);
 
   let tribeResult, claudeResult;
   try {
