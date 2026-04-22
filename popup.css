@@ -173,24 +173,25 @@ code {
   border-radius: 3px;
 }
 
-.sites {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px 10px;
+.scan-section {
+  text-align: center;
 }
 
-.sites li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
+.scan-btn {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 8px;
 }
 
-.sites input[type="checkbox"] {
-  margin: 0;
+.scan-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.status.progress {
+  color: var(--muted);
 }
 
 .footer-row {
