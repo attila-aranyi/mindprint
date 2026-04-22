@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "npx remotion studio src/index.ts",
-    "render": "npx remotion render src/index.ts MindPrintPromo out/mindprint-promo.mp4"
+    "render": "npx remotion render src/index.ts MindPrintPromo out/mindprint-promo.mp4",
+    "render:linkedin": "npx remotion render src/index.ts MindPrintLinkedIn out/mindprint-linkedin.mp4"
   },
   "keywords": [],
   "author": "",
