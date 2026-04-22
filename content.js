@@ -27,38 +27,42 @@
 
   // ---------- DOM extraction ----------
 
-  const KEEP_TAGS = new Set([
-    "H1", "H2", "H3", "H4", "H5", "H6", "A", "FIGCAPTION",
-    "ARTICLE", "MAIN", "SECTION", "NAV", "HEADER",
-  ]);
+  // Tags whose text content we capture as headline candidates.
+  const LEAF_TAGS = new Set(["H1", "H2", "H3", "H4", "H5", "H6", "A", "FIGCAPTION"]);
+  // Structural tags we recurse into but don't capture directly.
+  const CONTAINER_TAGS = new Set(["ARTICLE", "MAIN", "SECTION", "NAV", "HEADER", "DIV", "UL", "OL", "LI"]);
 
   function extractDOM() {
     const parts = [];
+    let totalLen = 0;
     const root = document.querySelector("main") || document.querySelector("article") || document.body;
 
     function walk(el) {
       if (!el || !el.tagName) return;
+      if (totalLen >= MAX_DOM_LEN) return;
       const tag = el.tagName;
 
       // Skip invisible, script, style, svg, etc.
-      if (tag === "SCRIPT" || tag === "STYLE" || tag === "SVG" || tag === "NOSCRIPT") return;
-      if (tag === "NAV" && parts.length > MAX_DOM_LEN * 0.8) return; // skip nav if already long
+      if (tag === "SCRIPT" || tag === "STYLE" || tag === "SVG" || tag === "NOSCRIPT" || tag === "IFRAME") return;
 
-      const isKeep = KEEP_TAGS.has(tag) || el.getAttribute("role") === "heading";
+      const isLeaf = LEAF_TAGS.has(tag) || el.getAttribute("role") === "heading";
 
-      if (isKeep) {
+      if (isLeaf) {
         const openTag = tag === "A" && el.href
           ? `<${tag.toLowerCase()} href="${el.getAttribute("href")}">`
           : `<${tag.toLowerCase()}>`;
         const text = el.textContent.replace(/\s+/g, " ").trim();
         if (text.length > 3 && text.length < 300) {
-          parts.push(`${openTag}${text}</${tag.toLowerCase()}>`);
+          const line = `${openTag}${text}</${tag.toLowerCase()}>`;
+          parts.push(line);
+          totalLen += line.length + 1;
         }
-        return; // don't recurse into kept elements — we already grabbed the text
+        return; // don't recurse into leaf elements — we already grabbed the text
       }
 
+      // Recurse into children for container and unknown tags.
       for (const child of el.children) {
-        if (parts.join("").length >= MAX_DOM_LEN) break;
+        if (totalLen >= MAX_DOM_LEN) break;
         walk(child);
       }
     }
