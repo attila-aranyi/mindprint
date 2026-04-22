@@ -407,7 +407,11 @@
       pills.appendChild(pill);
     }
 
-    if (claude.tone?.summary) addPill("mpb-pill-tone", claude.tone.summary.split(/[,.]/)[ 0].trim(), null, "tone");
+    if (claude.tone?.summary) {
+      // Extract a short tone label — take first few words, cap at 30 chars.
+      const toneShort = claude.tone.summary.split(/\s+/).slice(0, 4).join(" ");
+      addPill("mpb-pill-tone", toneShort.length > 30 ? toneShort.slice(0, 28) + "\u2026" : toneShort, null, "tone");
+    }
     if (claude.fact_check?.claims?.length) addPill("mpb-pill-fact", "claims", claude.fact_check.claims.length, "factcheck");
     if (claude.fallacies?.items?.length) addPill("mpb-pill-fallacy", "fallacies", claude.fallacies.items.length, "fallacies");
     else if (claude.fallacies) addPill("mpb-pill-ok", "No fallacies", null, "fallacies");
