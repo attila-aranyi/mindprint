@@ -61,28 +61,34 @@
 /* ---------- Analysis banner ---------- */
 
 .mindprint-banner {
-  position: relative;
-  z-index: 10000;
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 2147483647;
+  width: 340px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
   color: #1f2328;
   background: #f8f9fb;
   border: 1px solid #d0d4dc;
   border-radius: 10px;
-  margin: 16px 0;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
   line-height: 1.5;
 }
 
 .mpb-header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 10px 14px;
   background: #eef0f4;
   border-bottom: 1px solid #d0d4dc;
   flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .mpb-label {

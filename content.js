@@ -412,12 +412,8 @@
     } else if (msg?.type === "extractArticle") {
       sendResponse({ ok: true, ...extractArticle() });
     } else if (msg?.type === "injectBanner") {
-      const root = document.querySelector("article")
-        || document.querySelector('[role="main"]')
-        || document.querySelector("main")
-        || document.body;
       const banner = buildBanner(msg.analysis);
-      root.insertBefore(banner, root.firstChild);
+      document.body.appendChild(banner);
       sendResponse({ ok: true });
     } else if (msg?.type === "removeBanner") {
       const existing = document.querySelector(".mindprint-banner");
