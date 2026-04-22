@@ -1,17 +1,12 @@
 {
   "manifest_version": 3,
   "name": "MindPrint — Headline Reaction Detector",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Predicts the intended emotional reaction engineered into news headlines. Inspired by TRIBE v2, powered by Claude.",
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [
     "https://api.anthropic.com/*",
-    "https://*.modal.run/*",
-    "https://www.bbc.com/*",
-    "https://www.bbc.co.uk/*",
-    "https://www.reuters.com/*",
-    "https://www.theguardian.com/*",
-    "https://news.ycombinator.com/*"
+    "https://*.modal.run/*"
   ],
   "optional_host_permissions": [
     "http://*/*",
@@ -24,19 +19,5 @@
   "background": {
     "service_worker": "background.js",
     "type": "module"
-  },
-  "content_scripts": [
-    {
-      "matches": [
-        "https://www.bbc.com/*",
-        "https://www.bbc.co.uk/*",
-        "https://www.reuters.com/*",
-        "https://www.theguardian.com/*",
-        "https://news.ycombinator.com/*"
-      ],
-      "js": ["content.js"],
-      "css": ["content.css"],
-      "run_at": "document_idle"
-    }
-  ]
+  }
 }
