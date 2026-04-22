@@ -46,6 +46,18 @@ Respond with ONLY a JSON array. No prose, no markdown fences. Each element:
 
 The array length must equal the number of input headlines, in the same order.`;
 
+const EXTRACT_SYSTEM_PROMPT = `You extract news/article headlines from a simplified HTML snippet of a webpage. The HTML contains headings (h1-h6), links (a), and structural tags.
+
+Identify elements that are actual article/story headlines — not navigation labels, section headers, footer links, or UI text. A headline is a title of a news article, blog post, or story that a reader would click to read more.
+
+Respond with ONLY a JSON array. No prose, no markdown fences. Each element:
+{"text": "<exact headline text as it appears>"}
+
+Return at most 50 headlines. If the page has no identifiable headlines, return an empty array [].`;
+
+const EXTRACT_TIMEOUT_MS = 15000;
+const MAX_EXTRACT_HEADLINES = 50;
+
 // ---------- settings ----------
 
 function todayStr() {
@@ -59,13 +71,6 @@ async function getSettings() {
     apiKey: "",                 // Anthropic key (used by claude engine + fallback)
     fallbackToClaude: false,    // if tribe errors and apiKey set, retry with claude
     enabled: true,
-    sites: {
-      "www.bbc.com": true,
-      "www.bbc.co.uk": true,
-      "www.reuters.com": true,
-      "www.theguardian.com": true,
-      "news.ycombinator.com": true,
-    },
     analyzedToday: 0,
     analyzedDate: todayStr(),
   };
@@ -226,6 +231,111 @@ async function classifyBatchClaude(headlines, apiKey) {
   return out;
 }
 
+// ---------- headline extraction via Claude ----------
+
+async function extractHeadlines(strippedHtml, apiKey) {
+  if (!apiKey) throw new Error("no_api_key");
+  const resp = await fetch(ANTHROPIC_API, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: CLAUDE_MODEL,
+      max_tokens: 2048,
+      system: EXTRACT_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: `Extract headlines from this page HTML:\n\n${strippedHtml}` }],
+    }),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`Claude API ${resp.status}: ${errText.slice(0, 200)}`);
+  }
+  const data = await resp.json();
+  const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+  const arr = parseModelJson(text);
+  return arr
+    .map(item => String(item.text || "").replace(/\s+/g, " ").trim())
+    .filter(t => t.length >= 6 && t.length <= MAX_HEADLINE_LEN)
+    .slice(0, MAX_EXTRACT_HEADLINES);
+}
+
+// ---------- scan page orchestrator ----------
+
+async function handleScanPage(tabId) {
+  const settings = await getSettings();
+  if (!settings.enabled) return { ok: false, error: "disabled" };
+  if (!settings.apiKey) return { ok: false, error: "no_api_key", message: "Set an Anthropic API key first." };
+
+  // Step 1: Inject content script + CSS into the tab.
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content.js"],
+    });
+    await chrome.scripting.insertCSS({
+      target: { tabId },
+      files: ["content.css"],
+    });
+  } catch (e) {
+    return { ok: false, error: "inject_failed", message: `Cannot access this page: ${e.message}` };
+  }
+
+  // Step 2: Extract stripped DOM.
+  let domResp;
+  try {
+    domResp = await chrome.tabs.sendMessage(tabId, { type: "extractDOM" });
+  } catch (e) {
+    return { ok: false, error: "extract_failed", message: `DOM extraction failed: ${e.message}` };
+  }
+  if (!domResp?.ok || !domResp.html) {
+    return { ok: false, error: "extract_empty", message: "Could not extract page content." };
+  }
+
+  // Step 3: Ask Claude to identify headlines.
+  let headlines;
+  try {
+    headlines = await extractHeadlines(domResp.html, settings.apiKey);
+  } catch (e) {
+    return { ok: false, error: "headline_extract_failed", message: `Headline extraction failed: ${e.message}` };
+  }
+  if (headlines.length === 0) {
+    return { ok: true, count: 0, message: "No headlines found on this page." };
+  }
+
+  // Step 4: Classify headlines via existing pipeline.
+  const classifyResult = await handleClassify(headlines);
+  if (!classifyResult.ok) {
+    return {
+      ok: false,
+      error: classifyResult.error,
+      message: `Found ${headlines.length} headlines but classification failed: ${classifyResult.error}`,
+      count: headlines.length,
+    };
+  }
+
+  // Step 5: Send results to content script for badge injection.
+  let decorateResp;
+  try {
+    decorateResp = await chrome.tabs.sendMessage(tabId, {
+      type: "decorate",
+      results: classifyResult.results,
+    });
+  } catch (e) {
+    return { ok: false, error: "decorate_failed", message: `Badge injection failed: ${e.message}` };
+  }
+
+  return {
+    ok: true,
+    count: headlines.length,
+    decorated: decorateResp?.decorated || 0,
+    message: `Analyzed ${headlines.length} headlines, decorated ${decorateResp?.decorated || 0}.`,
+  };
+}
+
 // ---------- dispatch ----------
 
 async function handleClassify(headlines) {
@@ -295,6 +405,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     try {
       if (msg?.type === "classify") {
         sendResponse(await handleClassify(msg.headlines));
+      } else if (msg?.type === "scanPage") {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id) { sendResponse({ ok: false, error: "no_tab" }); return; }
+        sendResponse(await handleScanPage(tab.id));
       } else if (msg?.type === "getSettings") {
         sendResponse(await getSettings());
       } else if (msg?.type === "saveSettings") {
