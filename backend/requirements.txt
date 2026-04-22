@@ -1,0 +1,12 @@
+# Pinned loosely — Modal's image installs these. Also works for `pip install -r`
+# local runs with MINDPRINT_FAKE_TRIBE=1 (no GPU needed).
+
+fastapi[standard]>=0.110
+pydantic>=2
+numpy>=1.26
+nilearn>=0.10
+
+# Real TRIBE inference stack (omit for fake-mode local dev):
+# torch==2.4.0
+# torchaudio==2.4.0
+# git+https://github.com/facebookresearch/tribev2.git

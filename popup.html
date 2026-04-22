@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>MindPrint</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <div class="title">MindPrint</div>
+    <div class="subtitle">Predicts the emotional reaction behind headlines</div>
+  </header>
+
+  <section class="row">
+    <label class="switch">
+      <input id="enabled" type="checkbox" />
+      <span>Enabled</span>
+    </label>
+    <span id="today" class="pill">– analyzed today</span>
+  </section>
+
+  <section>
+    <div class="field-label">Engine</div>
+    <div class="engine-row">
+      <label class="radio"><input type="radio" name="engine" value="tribe" /> TRIBE v2 (self-hosted)</label>
+      <label class="radio"><input type="radio" name="engine" value="claude" /> Claude (BYOK)</label>
+    </div>
+  </section>
+
+  <section id="tribe-section">
+    <label for="backendUrl" class="field-label">Backend URL</label>
+    <div class="key-row">
+      <input id="backendUrl" type="url" placeholder="https://…modal.run" spellcheck="false" autocomplete="off" />
+      <button id="saveBackend" type="button">Save</button>
+    </div>
+    <div class="key-row">
+      <button id="testBackend" type="button" class="secondary">Test /health</button>
+      <label class="check"><input id="fallbackToClaude" type="checkbox" /> Fall back to Claude on error</label>
+    </div>
+    <div class="hint">Deploy the backend from <code>backend/</code> via <code>modal deploy modal_app.py</code>, then paste the URL here.</div>
+    <div id="backendStatus" class="status"></div>
+  </section>
+
+  <section id="claude-section">
+    <label for="apiKey" class="field-label">Anthropic API key</label>
+    <div class="key-row">
+      <input id="apiKey" type="password" placeholder="sk-ant-…" spellcheck="false" autocomplete="off" />
+      <button id="saveKey" type="button">Save</button>
+    </div>
+    <div class="hint">Stored locally in <code>chrome.storage.local</code>. Get a key at <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a>.</div>
+    <div id="keyStatus" class="status"></div>
+  </section>
+
+  <section>
+    <div class="field-label">Sites</div>
+    <ul class="sites" id="sites"></ul>
+  </section>
+
+  <section class="footer-row">
+    <button id="clearCache" type="button" class="secondary">Clear cache</button>
+    <a class="link" href="https://github.com/facebookresearch/tribev2" target="_blank" rel="noopener">TRIBE v2 ↗</a>
+  </section>
+
+  <footer>
+    <div class="legend">
+      <span class="lg mindprint-outrage">😡 outrage</span>
+      <span class="lg mindprint-fear">😨 fear</span>
+      <span class="lg mindprint-curiosity">🤔 curiosity</span>
+      <span class="lg mindprint-hope">🌱 hope</span>
+      <span class="lg mindprint-sadness">😢 sadness</span>
+      <span class="lg mindprint-pride">🦚 pride</span>
+      <span class="lg mindprint-amusement">😄 amusement</span>
+      <span class="lg mindprint-disgust">🤢 disgust</span>
+      <span class="lg mindprint-neutral">◽ neutral</span>
+    </div>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

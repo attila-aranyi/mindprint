@@ -1,0 +1,325 @@
+// MindPrint — service worker.
+// Dispatches headline batches to one of two engines:
+//   - "tribe"  → POST to a user-supplied backend URL (TRIBE v2 on Modal)
+//   - "claude" → direct to Anthropic Messages API with a user-supplied key
+// Falls back to Claude if TRIBE is unreachable and fallbackToClaude is on.
+
+const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
+const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
+const CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+const CACHE_VERSION = 2; // bump when taxonomy or engines change
+const MAX_BATCH = 20;
+const MAX_HEADLINE_LEN = 300;
+const TRIBE_TIMEOUT_MS = 90000; // TRIBE inference can be slow on cold start
+
+// Taxonomy — mirror of content.js / backend/taxonomy.py.
+const TAXONOMY = {
+  outrage:   { emoji: "😡", hint: "anger at a group, person, or policy" },
+  fear:      { emoji: "😨", hint: "worry about a threat or danger" },
+  curiosity: { emoji: "🤔", hint: "intrigue / clickbait mystery" },
+  hope:      { emoji: "🌱", hint: "optimism, positive change" },
+  sadness:   { emoji: "😢", hint: "empathy, grief, loss" },
+  pride:     { emoji: "🦚", hint: "in-group affirmation, accomplishment" },
+  amusement: { emoji: "😄", hint: "humor, lightness, entertainment" },
+  disgust:   { emoji: "🤢", hint: "moral or physical revulsion" },
+  neutral:   { emoji: "◽", hint: "informational, low emotional valence" },
+};
+const VALID_LABELS = Object.keys(TAXONOMY);
+
+const CLAUDE_SYSTEM_PROMPT = `You analyze news headlines to identify the dominant emotional reaction each headline is engineered to provoke in a typical reader. This helps readers notice emotional framing in the news they consume.
+
+You MUST choose exactly one label per headline from this fixed set:
+- outrage: anger at a group, person, or policy
+- fear: worry about a threat or danger
+- curiosity: intrigue, clickbait mystery, "you won't believe..."
+- hope: optimism, positive change, solutions
+- sadness: empathy, grief, loss
+- pride: in-group affirmation, accomplishment, patriotism
+- amusement: humor, lightness, quirky entertainment
+- disgust: moral or physical revulsion
+- neutral: informational, low emotional valence
+
+Focus on the *intended* reaction based on word choice, framing, and typical editorial patterns — not on the underlying event. A factual-sounding headline about a tragedy may still be engineered for sadness or fear.
+
+Respond with ONLY a JSON array. No prose, no markdown fences. Each element:
+{"id": <int>, "label": "<one of the labels above>", "confidence": <0.0-1.0>, "reasoning": "<<= 18 words>"}
+
+The array length must equal the number of input headlines, in the same order.`;
+
+// ---------- settings ----------
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function getSettings() {
+  const defaults = {
+    engine: "tribe",            // "tribe" | "claude"
+    backendUrl: "",             // e.g. https://user--mindprint-tribe-web.modal.run
+    apiKey: "",                 // Anthropic key (used by claude engine + fallback)
+    fallbackToClaude: false,    // if tribe errors and apiKey set, retry with claude
+    enabled: true,
+    sites: {
+      "www.bbc.com": true,
+      "www.bbc.co.uk": true,
+      "www.reuters.com": true,
+      "www.theguardian.com": true,
+      "news.ycombinator.com": true,
+    },
+    analyzedToday: 0,
+    analyzedDate: todayStr(),
+  };
+  const stored = await chrome.storage.local.get(Object.keys(defaults));
+  return { ...defaults, ...stored };
+}
+
+async function bumpAnalyzedCounter(n) {
+  const s = await getSettings();
+  const date = todayStr();
+  const count = s.analyzedDate === date ? s.analyzedToday + n : n;
+  await chrome.storage.local.set({ analyzedToday: count, analyzedDate: date });
+}
+
+// ---------- cache ----------
+
+function cacheKey(engine, headline) {
+  return `c:${CACHE_VERSION}:${engine}:${headline}`;
+}
+
+async function readCache(engine, headlines) {
+  const keys = headlines.map(h => cacheKey(engine, h));
+  const got = await chrome.storage.local.get(keys);
+  const hits = {};
+  const misses = [];
+  const now = Date.now();
+  for (const h of headlines) {
+    const v = got[cacheKey(engine, h)];
+    if (v && v.ts && (now - v.ts) < CACHE_TTL_MS && VALID_LABELS.includes(v.label)) {
+      hits[h] = v;
+    } else {
+      misses.push(h);
+    }
+  }
+  return { hits, misses };
+}
+
+async function writeCache(engine, results) {
+  const now = Date.now();
+  const patch = {};
+  for (const [headline, r] of Object.entries(results)) {
+    patch[cacheKey(engine, headline)] = { ...r, ts: now };
+  }
+  if (Object.keys(patch).length > 0) {
+    await chrome.storage.local.set(patch);
+  }
+}
+
+async function clearCache() {
+  const all = await chrome.storage.local.get(null);
+  const toRemove = Object.keys(all).filter(k => k.startsWith("c:"));
+  if (toRemove.length) await chrome.storage.local.remove(toRemove);
+  return toRemove.length;
+}
+
+// ---------- helpers ----------
+
+function truncate(s, n) { return s.length <= n ? s : s.slice(0, n - 1) + "…"; }
+
+function normalizeLabel(label) {
+  if (!label) return "neutral";
+  const lc = String(label).toLowerCase().trim();
+  return VALID_LABELS.includes(lc) ? lc : "neutral";
+}
+
+function parseModelJson(text) {
+  let t = String(text || "").trim();
+  if (t.startsWith("```")) {
+    t = t.replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
+  }
+  const start = t.indexOf("[");
+  const end = t.lastIndexOf("]");
+  if (start === -1 || end === -1 || end < start) throw new Error("no JSON array in model output");
+  return JSON.parse(t.slice(start, end + 1));
+}
+
+function fetchWithTimeout(url, opts, ms) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(t));
+}
+
+// ---------- engine: TRIBE backend ----------
+
+async function classifyBatchTribe(headlines, backendUrl) {
+  if (!backendUrl) throw new Error("no_backend_url");
+  const url = backendUrl.replace(/\/+$/, "") + "/classify";
+  const resp = await fetchWithTimeout(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ headlines }),
+  }, TRIBE_TIMEOUT_MS);
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`tribe backend ${resp.status}: ${errText.slice(0, 200)}`);
+  }
+  const data = await resp.json();
+  const out = {};
+  const server = data.results || {};
+  for (const h of headlines) {
+    const r = server[h];
+    if (!r) continue;
+    const label = normalizeLabel(r.label);
+    out[h] = {
+      label,
+      emoji: r.emoji || TAXONOMY[label].emoji,
+      confidence: typeof r.confidence === "number" ? Math.max(0, Math.min(1, r.confidence)) : 0.5,
+      reasoning: String(r.reasoning || "").slice(0, 240),
+      top_regions: Array.isArray(r.top_regions) ? r.top_regions.slice(0, 3) : [],
+      engine: "tribe",
+    };
+  }
+  return out;
+}
+
+// ---------- engine: Claude ----------
+
+async function classifyBatchClaude(headlines, apiKey) {
+  if (!apiKey) throw new Error("no_api_key");
+  const numbered = headlines.map((h, i) => `${i}. ${truncate(h, MAX_HEADLINE_LEN)}`).join("\n");
+  const userMsg = `Classify the intended emotional reaction for each of these ${headlines.length} headlines. Respond with a JSON array of ${headlines.length} elements, in the same order.\n\n${numbered}`;
+
+  const resp = await fetch(ANTHROPIC_API, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: CLAUDE_MODEL,
+      max_tokens: 1024,
+      system: CLAUDE_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userMsg }],
+    }),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`Claude API ${resp.status}: ${errText.slice(0, 200)}`);
+  }
+  const data = await resp.json();
+  const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+  const arr = parseModelJson(text);
+  const out = {};
+  for (let i = 0; i < headlines.length; i++) {
+    const item = arr.find(x => Number(x.id) === i) || arr[i] || {};
+    const label = normalizeLabel(item.label);
+    out[headlines[i]] = {
+      label,
+      emoji: TAXONOMY[label].emoji,
+      confidence: typeof item.confidence === "number" ? Math.max(0, Math.min(1, item.confidence)) : 0.5,
+      reasoning: String(item.reasoning || "").slice(0, 240),
+      top_regions: [],
+      engine: "claude",
+    };
+  }
+  return out;
+}
+
+// ---------- dispatch ----------
+
+async function handleClassify(headlines) {
+  const settings = await getSettings();
+  if (!settings.enabled) return { ok: false, error: "disabled" };
+
+  const seen = new Set();
+  const clean = [];
+  for (const h of headlines || []) {
+    const t = String(h || "").replace(/\s+/g, " ").trim();
+    if (t.length < 6 || t.length > MAX_HEADLINE_LEN) continue;
+    if (seen.has(t)) continue;
+    seen.add(t);
+    clean.push(t);
+  }
+  if (clean.length === 0) return { ok: true, results: {} };
+
+  // Config-level errors short-circuit before hitting cache.
+  if (settings.engine === "tribe" && !settings.backendUrl) {
+    return { ok: false, error: "no_backend_url" };
+  }
+  if (settings.engine === "claude" && !settings.apiKey) {
+    return { ok: false, error: "no_api_key" };
+  }
+
+  const { hits, misses } = await readCache(settings.engine, clean);
+  const results = { ...hits };
+
+  for (let i = 0; i < misses.length; i += MAX_BATCH) {
+    const batch = misses.slice(i, i + MAX_BATCH);
+    let batchResults;
+    try {
+      if (settings.engine === "tribe") {
+        batchResults = await classifyBatchTribe(batch, settings.backendUrl);
+      } else {
+        batchResults = await classifyBatchClaude(batch, settings.apiKey);
+      }
+    } catch (e) {
+      console.warn("[MindPrint] primary engine failed:", e.message || e);
+      // Fallback to Claude if allowed and applicable.
+      if (settings.engine === "tribe" && settings.fallbackToClaude && settings.apiKey) {
+        try {
+          batchResults = await classifyBatchClaude(batch, settings.apiKey);
+        } catch (e2) {
+          console.warn("[MindPrint] Claude fallback also failed:", e2.message || e2);
+          return { ok: false, error: String(e2.message || e2), partial: results };
+        }
+      } else {
+        return { ok: false, error: String(e.message || e), partial: results };
+      }
+    }
+    Object.assign(results, batchResults);
+    // Cache under the engine that produced the result (so switching engines recomputes).
+    const firstResult = Object.values(batchResults)[0];
+    const producedBy = firstResult?.engine || settings.engine;
+    await writeCache(producedBy, batchResults);
+    await bumpAnalyzedCounter(Object.keys(batchResults).length);
+  }
+
+  return { ok: true, results };
+}
+
+// ---------- message router ----------
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  (async () => {
+    try {
+      if (msg?.type === "classify") {
+        sendResponse(await handleClassify(msg.headlines));
+      } else if (msg?.type === "getSettings") {
+        sendResponse(await getSettings());
+      } else if (msg?.type === "saveSettings") {
+        await chrome.storage.local.set(msg.patch || {});
+        sendResponse({ ok: true });
+      } else if (msg?.type === "clearCache") {
+        const n = await clearCache();
+        sendResponse({ ok: true, cleared: n });
+      } else if (msg?.type === "testBackend") {
+        const url = (msg.url || "").replace(/\/+$/, "") + "/health";
+        try {
+          const r = await fetchWithTimeout(url, {}, 8000);
+          sendResponse({ ok: r.ok, status: r.status });
+        } catch (e) {
+          sendResponse({ ok: false, error: String(e.message || e) });
+        }
+      } else if (msg?.type === "ping") {
+        sendResponse({ ok: true });
+      } else {
+        sendResponse({ ok: false, error: "unknown_message" });
+      }
+    } catch (e) {
+      console.error("[MindPrint] handler error:", e);
+      sendResponse({ ok: false, error: String(e.message || e) });
+    }
+  })();
+  return true;
+});
