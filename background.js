@@ -10,7 +10,7 @@ const CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 const CACHE_VERSION = 2; // bump when taxonomy or engines change
 const MAX_BATCH = 20;
 const MAX_HEADLINE_LEN = 300;
-const TRIBE_TIMEOUT_MS = 90000; // TRIBE inference can be slow on cold start
+const TRIBE_TIMEOUT_MS = 300000; // 5 min — TRIBE processes each headline via TTS + inference
 
 // Taxonomy — mirror of content.js / backend/taxonomy.py.
 const TAXONOMY = {
