@@ -190,6 +190,20 @@ code {
   cursor: not-allowed;
 }
 
+.analyze-btn {
+  width: 100%;
+  padding: 8px 14px;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+}
+
+.analyze-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .status.progress {
   color: var(--muted);
 }

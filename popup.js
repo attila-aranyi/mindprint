@@ -15,6 +15,8 @@ const els = {
   keyStatus: document.getElementById("keyStatus"),
   scanPage: document.getElementById("scanPage"),
   scanStatus: document.getElementById("scanStatus"),
+  analyzeArticle: document.getElementById("analyzeArticle"),
+  analyzeStatus: document.getElementById("analyzeStatus"),
   today: document.getElementById("today"),
   clearCache: document.getElementById("clearCache"),
 };
@@ -125,6 +127,25 @@ els.scanPage.addEventListener("click", async () => {
   }
 });
 
+els.analyzeArticle.addEventListener("click", async () => {
+  els.analyzeArticle.disabled = true;
+  setStatus(els.analyzeStatus, "Analyzing article\u2026", "progress");
+  try {
+    const r = await send({ type: "analyzeArticle" });
+    if (r?.ok) {
+      setStatus(els.analyzeStatus, r.message || "Analysis complete.", "ok");
+      const s = await send({ type: "getSettings" });
+      els.today.textContent = `${s.analyzedToday || 0} analyzed today`;
+    } else {
+      setStatus(els.analyzeStatus, r?.message || r?.error || "Analysis failed.", "err");
+    }
+  } catch (e) {
+    setStatus(els.analyzeStatus, `Error: ${e.message}`, "err");
+  } finally {
+    els.analyzeArticle.disabled = false;
+  }
+});
+
 els.clearCache.addEventListener("click", async () => {
   const resp = await send({ type: "clearCache" });
   if (resp?.ok) setStatus(els.scanStatus, `Cleared ${resp.cleared} cached labels.`, "ok");
@@ -134,6 +155,9 @@ els.clearCache.addEventListener("click", async () => {
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === "scanProgress" && els.scanPage.disabled) {
     setStatus(els.scanStatus, msg.step, "progress");
+  }
+  if (msg?.type === "analyzeProgress" && els.analyzeArticle.disabled) {
+    setStatus(els.analyzeStatus, msg.step, "progress");
   }
 });
 
