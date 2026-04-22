@@ -345,6 +345,82 @@ async function analyzeArticleWithClaude(articleHtml, title, apiKey) {
   return JSON.parse(t.slice(start, end + 1));
 }
 
+// ---------- analyze article orchestrator ----------
+
+async function handleAnalyzeArticle(tabId) {
+  const settings = await getSettings();
+  if (!settings.enabled) return { ok: false, error: "disabled" };
+  if (!settings.apiKey) return { ok: false, error: "no_api_key", message: "Set an Anthropic API key first." };
+
+  function progress(step) {
+    chrome.runtime.sendMessage({ type: "analyzeProgress", step }).catch(() => {});
+  }
+
+  // Step 1: Inject content script + CSS.
+  progress("Preparing page...");
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+    await chrome.scripting.insertCSS({ target: { tabId }, files: ["content.css"] });
+  } catch (e) {
+    return { ok: false, error: "inject_failed", message: `Cannot access this page: ${e.message}` };
+  }
+
+  // Step 2: Extract article content.
+  progress("Extracting article...");
+  let articleResp;
+  try {
+    articleResp = await chrome.tabs.sendMessage(tabId, { type: "extractArticle" });
+  } catch (e) {
+    return { ok: false, error: "extract_failed", message: `Article extraction failed: ${e.message}` };
+  }
+  if (!articleResp?.ok || !articleResp.html) {
+    return { ok: false, error: "extract_empty", message: "No article content found on this page." };
+  }
+
+  const { title, imageUrl, html } = articleResp;
+
+  // Step 3: Run TRIBE + Claude in parallel.
+  progress("Analyzing tone and content...");
+
+  const tribePromise = (settings.engine === "tribe" && settings.backendUrl)
+    ? classifyBatchTribe([title], settings.backendUrl).catch(e => {
+        console.warn("[MindPrint] TRIBE analysis failed:", e.message);
+        return null;
+      })
+    : Promise.resolve(null);
+
+  const claudePromise = analyzeArticleWithClaude(html, title, settings.apiKey);
+
+  let tribeResult, claudeResult;
+  try {
+    [tribeResult, claudeResult] = await Promise.all([tribePromise, claudePromise]);
+  } catch (e) {
+    return { ok: false, error: "analysis_failed", message: `Analysis failed: ${e.message}` };
+  }
+
+  // Step 4: Merge results.
+  const tribeData = tribeResult ? tribeResult[title] || Object.values(tribeResult)[0] || null : null;
+
+  const analysisResults = {
+    title,
+    imageUrl,
+    claude: claudeResult,
+    tribe: tribeData,
+    truncated: html.length >= 29900,
+  };
+
+  // Step 5: Inject banner.
+  progress("Displaying results...");
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: "injectBanner", analysis: analysisResults });
+  } catch (e) {
+    return { ok: false, error: "inject_banner_failed", message: `Banner injection failed: ${e.message}` };
+  }
+
+  await bumpAnalyzedCounter(1);
+  return { ok: true, message: "Article analysis complete." };
+}
+
 // ---------- scan page orchestrator ----------
 
 async function handleScanPage(tabId) {
@@ -515,6 +591,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (!tab?.id) { sendResponse({ ok: false, error: "no_tab" }); return; }
         sendResponse(await handleScanPage(tab.id));
+      } else if (msg?.type === "analyzeArticle") {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id) { sendResponse({ ok: false, error: "no_tab" }); return; }
+        sendResponse(await handleAnalyzeArticle(tab.id));
       } else if (msg?.type === "getSettings") {
         sendResponse(await getSettings());
       } else if (msg?.type === "saveSettings") {
