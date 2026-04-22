@@ -61,6 +61,8 @@
 /* ---------- Analysis banner ---------- */
 
 .mindprint-banner {
+  position: relative;
+  z-index: 10000;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
   color: #1f2328;
