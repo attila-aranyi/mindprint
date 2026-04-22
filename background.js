@@ -58,7 +58,7 @@ Return at most 50 headlines. If the page has no identifiable headlines, return a
 const EXTRACT_TIMEOUT_MS = 30000;
 const MAX_EXTRACT_HEADLINES = 50;
 
-const CLAUDE_ANALYSIS_MODEL = "claude-sonnet-4-5-20250514";
+const CLAUDE_ANALYSIS_MODEL = "claude-sonnet-4-6";
 const ANALYSIS_TIMEOUT_MS = 60000;
 
 const ANALYSIS_SYSTEM_PROMPT = `You are an expert media analyst. Given the HTML content of a news article or blog post, perform a structured analysis covering tone, factual claims, and logical reasoning.
