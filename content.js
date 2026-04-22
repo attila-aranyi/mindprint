@@ -130,6 +130,125 @@
     return { title, imageUrl, html };
   }
 
+  // ---------- platform-specific extractors ----------
+
+  function detectPlatform() {
+    const host = location.hostname;
+    if (host === "x.com" || host === "twitter.com") return "x";
+    if (host === "www.instagram.com" || host === "instagram.com") return "instagram";
+    return "article";
+  }
+
+  function extractXPost() {
+    const tweetText = document.querySelector('[data-testid="tweetText"]');
+    const text = tweetText ? tweetText.textContent.replace(/\s+/g, " ").trim() : "";
+
+    const userNameEl = document.querySelector('[data-testid="User-Name"]');
+    let authorName = "", authorHandle = "", verified = false;
+    if (userNameEl) {
+      const spans = userNameEl.querySelectorAll("span");
+      for (const s of spans) {
+        const t = s.textContent.trim();
+        if (t.startsWith("@")) authorHandle = t;
+        else if (t.length > 1 && !t.startsWith("@") && !authorName) authorName = t;
+      }
+      verified = !!userNameEl.querySelector('svg[aria-label*="Verified"], svg[data-testid="icon-verified"]');
+    }
+
+    const timeEl = document.querySelector('article time[datetime]');
+    const timestamp = timeEl ? timeEl.getAttribute("datetime") : null;
+
+    const engagement = { likes: 0, retweets: 0, replies: 0, views: 0 };
+    const groups = document.querySelectorAll('[role="group"] button[data-testid]');
+    for (const btn of groups) {
+      const tid = btn.getAttribute("data-testid") || "";
+      const num = parseInt((btn.textContent.match(/[\d,.]+[KMB]?/) || ["0"])[0].replace(/,/g, ""), 10) || 0;
+      if (tid.includes("reply")) engagement.replies = num;
+      else if (tid.includes("retweet")) engagement.retweets = num;
+      else if (tid.includes("like")) engagement.likes = num;
+    }
+    const viewEl = document.querySelector('a[href*="/analytics"]');
+    if (viewEl) {
+      const vt = viewEl.textContent.replace(/,/g, "").match(/[\d]+/);
+      if (vt) engagement.views = parseInt(vt[0], 10) || 0;
+    }
+
+    const quotedEl = document.querySelector('[data-testid="quoteTweet"] [data-testid="tweetText"]');
+    const quotedText = quotedEl ? quotedEl.textContent.replace(/\s+/g, " ").trim() : null;
+
+    const hasMedia = !!document.querySelector('article [data-testid="tweetPhoto"], article video');
+
+    const title = `${authorName} ${authorHandle}`;
+    const html = `<p>${text}</p>` + (quotedText ? `<blockquote>${quotedText}</blockquote>` : "");
+
+    return {
+      platform: "x",
+      title,
+      author: { name: authorName, handle: authorHandle, verified },
+      timestamp,
+      engagement,
+      quotedText,
+      hasMedia,
+      html,
+    };
+  }
+
+  function extractInstagramPost() {
+    let captionText = "";
+    const captionEl = document.querySelector('h1')
+      || document.querySelector('[data-testid="post-comment-root"] span')
+      || document.querySelector('div[role="dialog"] ul li span');
+    if (captionEl) captionText = captionEl.textContent.replace(/\s+/g, " ").trim();
+
+    let authorName = "", verified = false;
+    const authorLink = document.querySelector('header a[role="link"]')
+      || document.querySelector('a[href*="/"]:has(img[alt])');
+    if (authorLink) {
+      authorName = authorLink.textContent.replace(/\s+/g, " ").trim();
+      const headerEl = authorLink.closest("header") || authorLink.parentElement;
+      if (headerEl) {
+        verified = !!headerEl.querySelector('svg[aria-label*="Verified"], span[title="Verified"]');
+      }
+    }
+
+    const engagement = { likes: 0, comments: 0 };
+    const likeEl = document.querySelector('section a[href*="liked_by"], section span');
+    if (likeEl) {
+      const likeMatch = likeEl.textContent.replace(/,/g, "").match(/([\d]+)/);
+      if (likeMatch) engagement.likes = parseInt(likeMatch[1], 10) || 0;
+    }
+    const commentEls = document.querySelectorAll('ul > li[role="menuitem"], ul > div > li');
+    engagement.comments = Math.max(0, commentEls.length - 1);
+
+    const hashtags = [];
+    const hashMatches = captionText.match(/#\w+/g);
+    if (hashMatches) hashtags.push(...hashMatches.map(h => h.slice(1)));
+
+    let mediaType = "image";
+    if (document.querySelector('video')) mediaType = "reel";
+    else if (document.querySelectorAll('li[style*="translateX"]').length > 1) mediaType = "carousel";
+
+    const title = `${authorName} post`;
+    const html = `<p>${captionText}</p>`;
+
+    return {
+      platform: "instagram",
+      title,
+      author: { name: authorName, verified },
+      engagement,
+      hashtags,
+      mediaType,
+      html,
+    };
+  }
+
+  function extractContent() {
+    const platform = detectPlatform();
+    if (platform === "x") return extractXPost();
+    if (platform === "instagram") return extractInstagramPost();
+    return { platform: "article", ...extractArticle() };
+  }
+
   // ---------- headline node finding ----------
 
   function normalizeText(s) {
@@ -409,8 +528,8 @@
         }
       }
       sendResponse({ ok: true, decorated });
-    } else if (msg?.type === "extractArticle") {
-      sendResponse({ ok: true, ...extractArticle() });
+    } else if (msg?.type === "extractContent") {
+      sendResponse({ ok: true, ...extractContent() });
     } else if (msg?.type === "injectBanner") {
       const banner = buildBanner(msg.analysis);
       document.body.appendChild(banner);
