@@ -71,6 +71,65 @@
     return parts.join("\n").slice(0, MAX_DOM_LEN);
   }
 
+  // ---------- article extraction (deep analysis) ----------
+
+  const MAX_ARTICLE_LEN = 30000;
+  const ARTICLE_LEAF_TAGS = new Set([
+    "H1", "H2", "H3", "H4", "H5", "H6", "P", "BLOCKQUOTE",
+    "LI", "FIGCAPTION", "PRE", "CODE", "EM", "STRONG", "A",
+  ]);
+
+  function extractArticle() {
+    const root = document.querySelector("article")
+      || document.querySelector('[role="main"]')
+      || document.querySelector("main")
+      || document.body;
+
+    // Extract title.
+    const h1 = document.querySelector("h1");
+    const title = h1 ? h1.textContent.replace(/\s+/g, " ").trim() : document.title;
+
+    // Extract main image URL.
+    const img = root.querySelector("img[src]");
+    const imageUrl = img ? img.src : null;
+
+    // Extract stripped article HTML.
+    const parts = [];
+    let totalLen = 0;
+
+    function walk(el) {
+      if (!el || !el.tagName) return;
+      if (totalLen >= MAX_ARTICLE_LEN) return;
+      const tag = el.tagName;
+
+      if (tag === "SCRIPT" || tag === "STYLE" || tag === "SVG" || tag === "NOSCRIPT"
+          || tag === "IFRAME" || tag === "NAV" || tag === "FOOTER") return;
+
+      const isLeaf = ARTICLE_LEAF_TAGS.has(tag);
+
+      if (isLeaf) {
+        const text = el.textContent.replace(/\s+/g, " ").trim();
+        if (text.length < 2) return;
+        const openTag = tag === "A" && el.href
+          ? `<${tag.toLowerCase()} href="${el.getAttribute("href")}">`
+          : `<${tag.toLowerCase()}>`;
+        const line = `${openTag}${text}</${tag.toLowerCase()}>`;
+        parts.push(line);
+        totalLen += line.length + 1;
+        if (tag !== "EM" && tag !== "STRONG" && tag !== "CODE") return;
+      }
+
+      for (const child of el.children) {
+        if (totalLen >= MAX_ARTICLE_LEN) break;
+        walk(child);
+      }
+    }
+
+    walk(root);
+    const html = parts.join("\n").slice(0, MAX_ARTICLE_LEN);
+    return { title, imageUrl, html };
+  }
+
   // ---------- headline node finding ----------
 
   function normalizeText(s) {
@@ -145,6 +204,8 @@
         }
       }
       sendResponse({ ok: true, decorated });
+    } else if (msg?.type === "extractArticle") {
+      sendResponse({ ok: true, ...extractArticle() });
     }
     return true;
   });
