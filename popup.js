@@ -1,13 +1,5 @@
 // MindPrint — popup UI.
 
-const SITES = [
-  "www.bbc.com",
-  "www.bbc.co.uk",
-  "www.reuters.com",
-  "www.theguardian.com",
-  "news.ycombinator.com",
-];
-
 const els = {
   enabled: document.getElementById("enabled"),
   engineRadios: document.querySelectorAll('input[name="engine"]'),
@@ -21,7 +13,8 @@ const els = {
   apiKey: document.getElementById("apiKey"),
   saveKey: document.getElementById("saveKey"),
   keyStatus: document.getElementById("keyStatus"),
-  sites: document.getElementById("sites"),
+  scanPage: document.getElementById("scanPage"),
+  scanStatus: document.getElementById("scanStatus"),
   today: document.getElementById("today"),
   clearCache: document.getElementById("clearCache"),
 };
@@ -29,34 +22,13 @@ const els = {
 function setStatus(el, msg, kind = "") {
   el.textContent = msg;
   el.className = "status " + kind;
-  if (msg) setTimeout(() => {
+  if (kind !== "progress" && msg) setTimeout(() => {
     if (el.textContent === msg) { el.textContent = ""; el.className = "status"; }
-  }, 3500);
+  }, 5000);
 }
 
 function send(msg) {
   return new Promise(resolve => chrome.runtime.sendMessage(msg, resolve));
-}
-
-function renderSites(siteMap) {
-  els.sites.innerHTML = "";
-  for (const host of SITES) {
-    const li = document.createElement("li");
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.id = `site-${host}`;
-    cb.checked = siteMap[host] !== false;
-    cb.addEventListener("change", async () => {
-      const settings = await send({ type: "getSettings" });
-      const next = { ...(settings.sites || {}), [host]: cb.checked };
-      await send({ type: "saveSettings", patch: { sites: next } });
-    });
-    const label = document.createElement("label");
-    label.htmlFor = cb.id;
-    label.textContent = host.replace(/^www\./, "");
-    li.append(cb, label);
-    els.sites.appendChild(li);
-  }
 }
 
 function applyEngineUI(engine) {
@@ -71,8 +43,7 @@ async function load() {
   els.fallbackToClaude.checked = !!s.fallbackToClaude;
   els.backendUrl.value = s.backendUrl || "";
   els.apiKey.value = "";
-  els.apiKey.placeholder = s.apiKey ? "••• key saved (overwrite to replace)" : "sk-ant-…";
-  renderSites(s.sites || {});
+  els.apiKey.placeholder = s.apiKey ? "\u2022\u2022\u2022 key saved (overwrite to replace)" : "sk-ant-\u2026";
   els.today.textContent = `${s.analyzedToday || 0} analyzed today`;
   applyEngineUI(s.engine || "tribe");
 }
@@ -101,7 +72,6 @@ els.saveBackend.addEventListener("click", async () => {
   const v = els.backendUrl.value.trim().replace(/\/+$/, "");
   if (!v) { setStatus(els.backendStatus, "Enter a URL first.", "err"); return; }
   if (!/^https?:\/\//.test(v)) { setStatus(els.backendStatus, "URL must start with http(s)://", "err"); return; }
-  // Request runtime host permission for user-supplied URLs.
   try {
     const origin = new URL(v).origin + "/*";
     const already = await chrome.permissions.contains({ origins: [origin] });
@@ -119,7 +89,7 @@ els.saveBackend.addEventListener("click", async () => {
 els.testBackend.addEventListener("click", async () => {
   const url = els.backendUrl.value.trim().replace(/\/+$/, "");
   if (!url) { setStatus(els.backendStatus, "Enter a URL first.", "err"); return; }
-  setStatus(els.backendStatus, "Testing…");
+  setStatus(els.backendStatus, "Testing\u2026");
   const r = await send({ type: "testBackend", url });
   if (r?.ok) setStatus(els.backendStatus, `OK (${r.status || 200})`, "ok");
   else setStatus(els.backendStatus, `Failed: ${r?.error || r?.status || "unknown"}`, "err");
@@ -131,13 +101,33 @@ els.saveKey.addEventListener("click", async () => {
   if (!v.startsWith("sk-ant-")) { setStatus(els.keyStatus, "That doesn't look like an Anthropic key.", "err"); return; }
   await send({ type: "saveSettings", patch: { apiKey: v } });
   els.apiKey.value = "";
-  els.apiKey.placeholder = "••• key saved (overwrite to replace)";
+  els.apiKey.placeholder = "\u2022\u2022\u2022 key saved (overwrite to replace)";
   setStatus(els.keyStatus, "Saved.", "ok");
+});
+
+els.scanPage.addEventListener("click", async () => {
+  els.scanPage.disabled = true;
+  setStatus(els.scanStatus, "Scanning\u2026", "progress");
+  try {
+    const r = await send({ type: "scanPage" });
+    if (r?.ok) {
+      setStatus(els.scanStatus, r.message || `Done: ${r.count} headlines.`, "ok");
+      // Refresh the analyzed count.
+      const s = await send({ type: "getSettings" });
+      els.today.textContent = `${s.analyzedToday || 0} analyzed today`;
+    } else {
+      setStatus(els.scanStatus, r?.message || r?.error || "Scan failed.", "err");
+    }
+  } catch (e) {
+    setStatus(els.scanStatus, `Error: ${e.message}`, "err");
+  } finally {
+    els.scanPage.disabled = false;
+  }
 });
 
 els.clearCache.addEventListener("click", async () => {
   const resp = await send({ type: "clearCache" });
-  if (resp?.ok) setStatus(els.backendStatus, `Cleared ${resp.cleared} cached labels.`, "ok");
+  if (resp?.ok) setStatus(els.scanStatus, `Cleared ${resp.cleared} cached labels.`, "ok");
 });
 
 load();
