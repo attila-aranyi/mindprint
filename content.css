@@ -57,3 +57,201 @@
   .mindprint-disgust   { background: #2f3a1d; border-color: #4e5f2f; color: #d4e0a8; }
   .mindprint-neutral   { background: #2a2f37; border-color: #3b424d; color: #c9ccd3; }
 }
+
+/* ---------- Analysis banner ---------- */
+
+.mindprint-banner {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  color: #1f2328;
+  background: #f8f9fb;
+  border: 1px solid #d0d4dc;
+  border-radius: 10px;
+  margin: 16px 0;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  line-height: 1.5;
+}
+
+.mpb-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #eef0f4;
+  border-bottom: 1px solid #d0d4dc;
+  flex-wrap: wrap;
+}
+
+.mpb-label {
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.mpb-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+
+.mpb-pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: filter 0.1s;
+}
+.mpb-pill:hover { filter: brightness(0.93); }
+
+.mpb-pill-tone    { background: #e3f0ff; border: 1px solid #a7c8f1; color: #1b4b9a; }
+.mpb-pill-fact    { background: #fff4d6; border: 1px solid #e5c97a; color: #7a5b10; }
+.mpb-pill-fallacy { background: #ffe4e1; border: 1px solid #f3aaa0; color: #9a1b1b; }
+
+.mpb-dismiss {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  color: #5b636d;
+  padding: 0 4px;
+}
+.mpb-dismiss:hover { color: #1f2328; }
+
+.mpb-section { border-bottom: 1px solid #e1e4e8; }
+.mpb-section:last-child { border-bottom: none; }
+
+.mpb-section-header {
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #5b636d;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+.mpb-section-header::after {
+  content: "\25B6";
+  position: absolute;
+  right: 14px;
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+.mpb-open .mpb-section-header::after {
+  transform: rotate(90deg);
+}
+
+.mpb-section-body {
+  padding: 0 14px 12px;
+}
+
+.mpb-section-body p {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.mpb-quote {
+  margin: 6px 0;
+  padding: 6px 12px;
+  border-left: 3px solid #a7c8f1;
+  background: rgba(163, 200, 241, 0.1);
+  font-style: italic;
+  font-size: 12px;
+  color: #3a4a5b;
+}
+
+.mpb-tribe-sub {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: rgba(107, 140, 255, 0.08);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.mpb-regions { color: #5b636d; font-size: 11px; }
+
+.mpb-tribe-reasoning { font-size: 12px; color: #5b636d; margin-top: 4px; }
+
+.mpb-claim-card {
+  padding: 8px 0;
+  border-bottom: 1px solid #e1e4e8;
+}
+.mpb-claim-card:last-child { border-bottom: none; }
+
+.mpb-conf-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.conf-high { background: #e2f6e6; color: #1d6b2d; }
+.conf-med  { background: #fff4d6; color: #7a5b10; }
+.conf-low  { background: #ffe4e1; color: #9a1b1b; }
+.conf-unv  { background: #e6ecf2; color: #2c4b66; }
+
+.mpb-claim-text { font-size: 13px; font-weight: 500; }
+
+.mpb-claim-reason { font-size: 12px; color: #5b636d; margin: 4px 0 0; }
+
+.mpb-fallacy-card {
+  padding: 8px 0;
+  border-bottom: 1px solid #e1e4e8;
+}
+.mpb-fallacy-card:last-child { border-bottom: none; }
+
+.mpb-note {
+  font-size: 11px;
+  color: #5b636d;
+  font-style: italic;
+}
+
+/* ---------- Banner dark mode ---------- */
+
+@media (prefers-color-scheme: dark) {
+  .mindprint-banner {
+    color: #e6e8eb;
+    background: #1a1e24;
+    border-color: #3b424d;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  .mpb-header {
+    background: #22272e;
+    border-bottom-color: #3b424d;
+  }
+  .mpb-pill-tone    { background: #1b2e4a; border-color: #2e4a7a; color: #c6d9ff; }
+  .mpb-pill-fact    { background: #4a3a12; border-color: #7a5f21; color: #ffe2a1; }
+  .mpb-pill-fallacy { background: #4a1f1b; border-color: #7a2e27; color: #ffc6bf; }
+  .mpb-dismiss { color: #a0a6ad; }
+  .mpb-dismiss:hover { color: #e6e8eb; }
+  .mpb-section { border-bottom-color: #2a2f37; }
+  .mpb-section-header { color: #a0a6ad; }
+  .mpb-quote {
+    border-left-color: #2e4a7a;
+    background: rgba(46, 74, 122, 0.15);
+    color: #a0b4cc;
+  }
+  .mpb-tribe-sub { background: rgba(107, 140, 255, 0.1); }
+  .mpb-regions { color: #a0a6ad; }
+  .mpb-tribe-reasoning { color: #a0a6ad; }
+  .mpb-claim-card { border-bottom-color: #2a2f37; }
+  .conf-high { background: #1e3f22; color: #bfe6c6; }
+  .conf-med  { background: #4a3a12; color: #ffe2a1; }
+  .conf-low  { background: #4a1f1b; color: #ffc6bf; }
+  .conf-unv  { background: #26343f; color: #c6d4e0; }
+  .mpb-claim-reason { color: #a0a6ad; }
+  .mpb-fallacy-card { border-bottom-color: #2a2f37; }
+  .mpb-note { color: #a0a6ad; }
+}
