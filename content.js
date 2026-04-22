@@ -188,6 +188,211 @@
     }
   }
 
+  // ---------- analysis banner ----------
+
+  const CONF_COLORS = { high: "conf-high", medium: "conf-med", low: "conf-low", unverifiable: "conf-unv" };
+
+  function buildBanner(analysis) {
+    const existing = document.querySelector(".mindprint-banner");
+    if (existing) existing.remove();
+
+    const { claude, tribe, truncated } = analysis;
+    const banner = document.createElement("div");
+    banner.className = "mindprint-banner";
+
+    // Header bar.
+    const header = document.createElement("div");
+    header.className = "mpb-header";
+
+    const label = document.createElement("span");
+    label.className = "mpb-label";
+    label.textContent = "MindPrint Analysis";
+
+    const pills = document.createElement("span");
+    pills.className = "mpb-pills";
+
+    if (claude.tone?.summary) {
+      const pill = document.createElement("span");
+      pill.className = "mpb-pill mpb-pill-tone";
+      pill.textContent = claude.tone.summary;
+      pill.addEventListener("click", () => toggleSection(banner, "tone"));
+      pills.appendChild(pill);
+    }
+    if (claude.fact_check?.summary) {
+      const pill = document.createElement("span");
+      pill.className = "mpb-pill mpb-pill-fact";
+      pill.textContent = claude.fact_check.summary;
+      pill.addEventListener("click", () => toggleSection(banner, "factcheck"));
+      pills.appendChild(pill);
+    }
+    if (claude.fallacies?.summary) {
+      const pill = document.createElement("span");
+      pill.className = "mpb-pill mpb-pill-fallacy";
+      pill.textContent = claude.fallacies.summary;
+      pill.addEventListener("click", () => toggleSection(banner, "fallacies"));
+      pills.appendChild(pill);
+    }
+
+    const dismiss = document.createElement("button");
+    dismiss.className = "mpb-dismiss";
+    dismiss.textContent = "\u00D7";
+    dismiss.title = "Dismiss";
+    dismiss.addEventListener("click", () => banner.remove());
+
+    header.append(label, pills, dismiss);
+    banner.appendChild(header);
+
+    // Tone section.
+    const toneSection = buildSection("tone", "Tone", () => {
+      const frag = document.createDocumentFragment();
+      const p = document.createElement("p");
+      p.textContent = claude.tone?.details || claude.tone?.summary || "";
+      frag.appendChild(p);
+      if (claude.tone?.evidence?.length) {
+        for (const q of claude.tone.evidence) {
+          const bq = document.createElement("blockquote");
+          bq.className = "mpb-quote";
+          bq.textContent = q;
+          frag.appendChild(bq);
+        }
+      }
+      if (tribe) {
+        const sub = document.createElement("div");
+        sub.className = "mpb-tribe-sub";
+        const tLabel = document.createElement("strong");
+        tLabel.textContent = `TRIBE v2: ${tribe.emoji || ""} ${tribe.label || "unknown"} (${Math.round((tribe.confidence || 0) * 100)}%)`;
+        sub.appendChild(tLabel);
+        if (tribe.top_regions?.length) {
+          const regions = document.createElement("span");
+          regions.className = "mpb-regions";
+          regions.textContent = " \u2014 " + tribe.top_regions.map(r => `${r.roi} (${r.contribution.toFixed(2)})`).join(", ");
+          sub.appendChild(regions);
+        }
+        if (tribe.reasoning) {
+          const rp = document.createElement("p");
+          rp.className = "mpb-tribe-reasoning";
+          rp.textContent = tribe.reasoning;
+          sub.appendChild(rp);
+        }
+        frag.appendChild(sub);
+      }
+      return frag;
+    });
+    banner.appendChild(toneSection);
+
+    // Fact-check section.
+    const factSection = buildSection("factcheck", "Fact Check", () => {
+      const frag = document.createDocumentFragment();
+      const claims = claude.fact_check?.claims || [];
+      if (claims.length === 0) {
+        const p = document.createElement("p");
+        p.textContent = "No verifiable claims identified.";
+        frag.appendChild(p);
+        return frag;
+      }
+      for (const claim of claims) {
+        const card = document.createElement("div");
+        card.className = "mpb-claim-card";
+        const badge = document.createElement("span");
+        badge.className = `mpb-conf-badge ${CONF_COLORS[claim.confidence] || "conf-med"}`;
+        badge.textContent = claim.confidence || "medium";
+        const text = document.createElement("span");
+        text.className = "mpb-claim-text";
+        text.textContent = claim.claim;
+        const reason = document.createElement("p");
+        reason.className = "mpb-claim-reason";
+        reason.textContent = claim.reasoning || "";
+        card.append(badge, text, reason);
+        frag.appendChild(card);
+      }
+      return frag;
+    });
+    banner.appendChild(factSection);
+
+    // Fallacies section.
+    const fallacySection = buildSection("fallacies", "Logical Fallacies", () => {
+      const frag = document.createDocumentFragment();
+      const items = claude.fallacies?.items || [];
+      if (items.length === 0) {
+        const p = document.createElement("p");
+        p.textContent = "No clear logical fallacies detected.";
+        frag.appendChild(p);
+        return frag;
+      }
+      for (const item of items) {
+        const card = document.createElement("div");
+        card.className = "mpb-fallacy-card";
+        const typeEl = document.createElement("strong");
+        typeEl.textContent = item.type || "Unknown";
+        const bq = document.createElement("blockquote");
+        bq.className = "mpb-quote";
+        bq.textContent = item.quote || "";
+        const expl = document.createElement("p");
+        expl.textContent = item.explanation || "";
+        card.append(typeEl, bq, expl);
+        frag.appendChild(card);
+      }
+      return frag;
+    });
+    banner.appendChild(fallacySection);
+
+    // Overall summary section.
+    const summarySection = buildSection("summary", "Summary", () => {
+      const frag = document.createDocumentFragment();
+      const p = document.createElement("p");
+      p.textContent = claude.overall_summary || "";
+      frag.appendChild(p);
+      if (truncated) {
+        const note = document.createElement("p");
+        note.className = "mpb-note";
+        note.textContent = "Note: article was truncated for analysis.";
+        frag.appendChild(note);
+      }
+      return frag;
+    });
+    banner.appendChild(summarySection);
+
+    return banner;
+  }
+
+  function buildSection(id, label, contentBuilder) {
+    const section = document.createElement("div");
+    section.className = "mpb-section";
+    section.dataset.section = id;
+
+    const header = document.createElement("div");
+    header.className = "mpb-section-header";
+    header.textContent = label;
+    header.addEventListener("click", () => {
+      const parent = section.closest(".mindprint-banner");
+      if (parent) toggleSection(parent, id);
+    });
+
+    const body = document.createElement("div");
+    body.className = "mpb-section-body";
+    body.style.display = "none";
+    body.appendChild(contentBuilder());
+
+    section.append(header, body);
+    return section;
+  }
+
+  function toggleSection(banner, sectionId) {
+    const sections = banner.querySelectorAll(".mpb-section");
+    for (const s of sections) {
+      const body = s.querySelector(".mpb-section-body");
+      if (!body) continue;
+      if (s.dataset.section === sectionId) {
+        const isOpen = body.style.display !== "none";
+        body.style.display = isOpen ? "none" : "block";
+        s.classList.toggle("mpb-open", !isOpen);
+      } else {
+        body.style.display = "none";
+        s.classList.remove("mpb-open");
+      }
+    }
+  }
+
   // ---------- message listener ----------
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -206,6 +411,18 @@
       sendResponse({ ok: true, decorated });
     } else if (msg?.type === "extractArticle") {
       sendResponse({ ok: true, ...extractArticle() });
+    } else if (msg?.type === "injectBanner") {
+      const root = document.querySelector("article")
+        || document.querySelector('[role="main"]')
+        || document.querySelector("main")
+        || document.body;
+      const banner = buildBanner(msg.analysis);
+      root.insertBefore(banner, root.firstChild);
+      sendResponse({ ok: true });
+    } else if (msg?.type === "removeBanner") {
+      const existing = document.querySelector(".mindprint-banner");
+      if (existing) existing.remove();
+      sendResponse({ ok: true });
     }
     return true;
   });
