@@ -20,5 +20,12 @@ build/
 .AppleDouble
 .LSOverride
 
-# Node (if ever used)
+# Node
 node_modules/
+
+# Remotion video build
+video/node_modules/
+video/dist/
+
+# Secrets
+*.modal.toml
